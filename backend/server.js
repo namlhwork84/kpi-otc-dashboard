@@ -341,32 +341,65 @@ app.get('/api/muc-tieu', (req, res) => {
   const namInt = parseInt(nam || 2026);
   const thangInt = parseInt(thang || 4);
 
-  // Lấy tất cả chi_tieu của kỳ này
   const rows = db.chi_tieu.filter(r => r.nam === namInt && r.thang === thangInt);
 
-  // Pivot: map[nhan_vien][chi_so] = gia_tri
+  // Pivot: map[nhan_vien] → object chứa tất cả chi_so
   const pivot = {};
   const allChiSo = new Set();
 
   rows.forEach(r => {
     const nv = r.nhan_vien;
-    if (!pivot[nv]) pivot[nv] = { nhan_vien: nv, nhom: r.nhom, nguon: r.nguon };
+    if (!pivot[nv]) pivot[nv] = {
+      nhan_vien: nv,
+      nhom: r.nhom,
+      parent_dsm: r.parent_dsm || null,
+      nguon: r.nguon
+    };
     pivot[nv][r.chi_so] = r.gia_tri;
     pivot[nv][r.chi_so + '_nam'] = r.chi_tieu_nam;
     allChiSo.add(r.chi_so);
   });
 
-  // Thứ tự hiển thị cấp bậc: TỔNG KÊNH → DSM → TDV/CTV
-  const orderMap = { 'TỔNG KÊNH': 0 };
-  let dsmOrder = 100, tdvOrder = 200;
-  rows.forEach(r => {
-    if (r.nhan_vien.startsWith('DSM') && orderMap[r.nhan_vien] === undefined) orderMap[r.nhan_vien] = dsmOrder++;
-    if (!r.nhan_vien.startsWith('DSM') && !r.nhan_vien.startsWith('TỔNG') && orderMap[r.nhan_vien] === undefined) orderMap[r.nhan_vien] = tdvOrder++;
-  });
+  // Xây thứ tự: TỔNG KÊNH → DSM 01 → [TDV của DSM01] → DSM 02 → [TDV DSM02] → ...
+  const DSM_ORDER = ['DSM 01', 'DSM 02', 'DSM 03', 'DSM 04', 'DSM 5', 'CCO'];
+  const result = [];
 
-  const result = Object.values(pivot).sort((a, b) => (orderMap[a.nhan_vien] ?? 999) - (orderMap[b.nhan_vien] ?? 999));
+  // 1. TỔNG KÊNH đầu tiên
+  if (pivot['TỔNG KÊNH']) result.push(pivot['TỔNG KÊNH']);
 
-  // Danh sách chỉ số theo thứ tự ưu tiên
+  // 2. Từng DSM theo thứ tự, sau đó TDV trực thuộc
+  const allDSMs = [...new Set(
+    Object.values(pivot)
+      .filter(r => !r.parent_dsm && r.nhan_vien !== 'TỔNG KÊNH')
+      .map(r => r.nhan_vien)
+  )];
+
+  // Sắp xếp DSM theo DSM_ORDER, DSM không có trong list thì để cuối
+  const sortedDSMs = [
+    ...DSM_ORDER.filter(d => allDSMs.includes(d)),
+    ...allDSMs.filter(d => !DSM_ORDER.includes(d)).sort()
+  ];
+
+  for (const dsm of sortedDSMs) {
+    if (pivot[dsm]) result.push({ ...pivot[dsm], is_dsm: true });
+
+    // TDV thuộc DSM này (parent_dsm === dsm), giữ nguyên thứ tự trong file
+    const tdvs = rows
+      .filter(r => r.parent_dsm === dsm && r.chi_so === (rows.find(x => x.parent_dsm === dsm)?.chi_so))
+      .map(r => r.nhan_vien)
+      .filter((v, i, a) => a.indexOf(v) === i); // unique, giữ thứ tự
+
+    // Lấy TDV theo thứ tự id gốc
+    const tdvOrdered = [...new Set(
+      rows.filter(r => r.parent_dsm === dsm).map(r => r.nhan_vien)
+    )];
+
+    for (const tdv of tdvOrdered) {
+      if (pivot[tdv]) result.push({ ...pivot[tdv], is_tdv: true });
+    }
+  }
+
+  // Chỉ số theo thứ tự ưu tiên
   const chiSoOrder = ['Doanh số', 'Số lượng đơn hàng', 'Giá trị trung bình đơn hàng', 'Số lượng độ phủ TB/THÁNG', 'Sản phẩm trọng tâm'];
   const orderedChiSo = [
     ...chiSoOrder.filter(c => allChiSo.has(c)),

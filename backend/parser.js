@@ -43,6 +43,7 @@ function parseChiTieuFile(buffer, nam, thang, nguon) {
 
   const results = [];
   let currentNhom = null;
+  let currentDSM = null; // DSM cha hiện tại
   const startRow = headerRow >= 0 ? headerRow + 1 : 3;
 
   for (let i = startRow; i < rows.length; i++) {
@@ -62,10 +63,15 @@ function parseChiTieuFile(buffer, nam, thang, nguon) {
       currentNhom = String(row[1]).trim();
     }
 
+    // Track DSM cha: dòng nào có nhan_vien bắt đầu bằng DSM hoặc CCO thì là DSM level
+    const isDSM = nhanVien.startsWith('DSM') || nhanVien === 'CCO' || nhanVien === 'TỔNG KÊNH';
+    if (isDSM && nhanVien !== 'TỔNG KÊNH') currentDSM = nhanVien;
+
     results.push({
       nam,
       thang,
       nhom: currentNhom,
+      parent_dsm: isDSM ? null : currentDSM,
       nhan_vien: nhanVien,
       chi_so: chiSo,
       chi_tieu_nam: chiTieuNam,

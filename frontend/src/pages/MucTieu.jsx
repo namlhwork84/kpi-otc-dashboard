@@ -55,9 +55,17 @@ export default function MucTieu() {
   }, [nam, thang]);
 
   const chiSoList = data?.chi_so_list || [];
-  const rows = (data?.rows || []).filter(r =>
-    !filter || r.nhan_vien.toLowerCase().includes(filter.toLowerCase())
-  );
+
+  // Khi filter: giữ DSM cha nếu có TDV con khớp, hoặc bản thân DSM khớp
+  const allRows = data?.rows || [];
+  const rows = !filter ? allRows : allRows.filter(r => {
+    if (r.nhan_vien.toLowerCase().includes(filter.toLowerCase())) return true;
+    // Giữ DSM nếu có TDV con nào khớp
+    if (r.is_dsm || r.nhan_vien === 'TỔNG KÊNH') {
+      return allRows.some(c => c.parent_dsm === r.nhan_vien && c.nhan_vien.toLowerCase().includes(filter.toLowerCase()));
+    }
+    return false;
+  });
 
   return (
     <div style={{ padding: '20px 24px' }}>
@@ -140,25 +148,35 @@ export default function MucTieu() {
               </thead>
               <tbody>
                 {rows.map((row, i) => {
-                  const level = getLevel(row.nhan_vien);
-                  const s = LEVEL_STYLE[level];
+                  // Xác định level từ API flags
+                  const isTotal = row.nhan_vien === 'TỔNG KÊNH';
+                  const isDSM   = !isTotal && !row.parent_dsm;
+                  const isTDV   = !!row.parent_dsm;
+
+                  const bgRow   = isTotal ? '#1e3a5f' : isDSM ? '#dce8f8' : i % 2 === 0 ? '#fff' : '#fafbfd';
+                  const clrText = isTotal ? '#fff' : '#333';
+                  const fwText  = isTotal || isDSM ? 700 : 400;
+
                   return (
-                    <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                      <td style={{ padding: '9px 16px', fontWeight: s.fontWeight, background: s.background, color: s.color, whiteSpace: 'nowrap' }}>
-                        {level === 'TDV' && <span style={{ marginRight: 8, color: '#ccc' }}>└</span>}
+                    <tr key={i} style={{ borderBottom: isDSM ? '2px solid #b8d0ef' : '1px solid #f0f0f0' }}>
+                      {/* Tên */}
+                      <td style={{ padding: isTDV ? '8px 16px 8px 36px' : '10px 16px', fontWeight: fwText, background: bgRow, color: clrText, whiteSpace: 'nowrap', borderLeft: isDSM ? '4px solid #2d6a9f' : isTotal ? '4px solid #fff' : '4px solid transparent' }}>
+                        {isTDV && <span style={{ marginRight: 6, color: '#b0c4de', fontSize: 11 }}>└</span>}
                         {row.nhan_vien}
                       </td>
-                      <td style={{ padding: '9px 12px', textAlign: 'center', background: s.background, color: s.color === '#fff' ? 'rgba(255,255,255,0.7)' : '#888', fontSize: 11 }}>
+                      {/* Nhóm */}
+                      <td style={{ padding: '8px 12px', textAlign: 'center', background: bgRow, color: isTotal ? 'rgba(255,255,255,0.6)' : '#999', fontSize: 11 }}>
                         {row.nhom || '—'}
                       </td>
+                      {/* Các chỉ số */}
                       {chiSoList.map(cs => {
-                        const v = row[cs];
+                        const v    = row[cs];
                         const vNam = row[cs + '_nam'];
                         return (
-                          <td key={cs} style={{ padding: '9px 12px', textAlign: 'right', background: level === 'TỔNG KÊNH' ? '#1e3a5f' : level === 'DSM' ? '#f0f5ff' : '#fff', color: level === 'TỔNG KÊNH' ? '#fff' : '#333', fontWeight: level === 'TỔNG KÊNH' ? 600 : level === 'DSM' ? 600 : 400 }}>
+                          <td key={cs} style={{ padding: '8px 12px', textAlign: 'right', background: bgRow, color: clrText, fontWeight: fwText }}>
                             <div>{fmt(v, cs)}</div>
                             {showNam && vNam && (
-                              <div style={{ fontSize: 10, color: level === 'TỔNG KÊNH' ? 'rgba(255,255,255,0.6)' : '#aaa' }}>{fmt(vNam, cs)}</div>
+                              <div style={{ fontSize: 10, color: isTotal ? 'rgba(255,255,255,0.5)' : '#bbb', marginTop: 1 }}>{fmt(vNam, cs)}</div>
                             )}
                           </td>
                         );
