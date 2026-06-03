@@ -43,8 +43,9 @@ export default function MucTieu() {
   const [thang, setThang] = useState(4);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [khuVuc, setKhuVuc] = useState(''); // DSM được chọn
   const [filter, setFilter] = useState('');
-  const [showNam, setShowNam] = useState(false); // toggle xem chỉ tiêu năm
+  const [showNam, setShowNam] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -55,14 +56,25 @@ export default function MucTieu() {
   }, [nam, thang]);
 
   const chiSoList = data?.chi_so_list || [];
-
-  // Khi filter: giữ DSM cha nếu có TDV con khớp, hoặc bản thân DSM khớp
   const allRows = data?.rows || [];
-  const rows = !filter ? allRows : allRows.filter(r => {
+
+  // Danh sách khu vực (DSM) lấy từ dữ liệu
+  const dsmList = allRows.filter(r => !r.parent_dsm && r.nhan_vien !== 'TỔNG KÊNH');
+
+  // Lọc theo khu vực
+  let rowsByKhuVuc = allRows;
+  if (khuVuc) {
+    rowsByKhuVuc = allRows.filter(r =>
+      r.nhan_vien === khuVuc ||          // chính DSM đó
+      r.parent_dsm === khuVuc            // TDV trực thuộc
+    );
+  }
+
+  // Lọc theo ô tìm kiếm
+  const rows = !filter ? rowsByKhuVuc : rowsByKhuVuc.filter(r => {
     if (r.nhan_vien.toLowerCase().includes(filter.toLowerCase())) return true;
-    // Giữ DSM nếu có TDV con nào khớp
-    if (r.is_dsm || r.nhan_vien === 'TỔNG KÊNH') {
-      return allRows.some(c => c.parent_dsm === r.nhan_vien && c.nhan_vien.toLowerCase().includes(filter.toLowerCase()));
+    if (!r.parent_dsm && r.nhan_vien !== 'TỔNG KÊNH') {
+      return rowsByKhuVuc.some(c => c.parent_dsm === r.nhan_vien && c.nhan_vien.toLowerCase().includes(filter.toLowerCase()));
     }
     return false;
   });
@@ -75,22 +87,31 @@ export default function MucTieu() {
           Bảng Mục Tiêu KPI
         </h2>
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Filter năm/tháng */}
+          {/* Năm */}
           <select value={nam} onChange={e => setNam(parseInt(e.target.value))}
             style={{ padding: '8px 12px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13 }}>
             {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+          {/* Tháng */}
           <select value={thang} onChange={e => setThang(parseInt(e.target.value))}
             style={{ padding: '8px 12px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, fontWeight: thang === 0 ? 600 : 400 }}>
             <option value={0}>📅 Cả năm {nam}</option>
             {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{MONTHS[m]}</option>)}
           </select>
+          {/* Khu vực */}
+          <select value={khuVuc} onChange={e => { setKhuVuc(e.target.value); setFilter(''); }}
+            style={{ padding: '8px 12px', border: `1.5px solid ${khuVuc ? '#2d6a9f' : '#e0e0e0'}`, borderRadius: 8, fontSize: 13, fontWeight: khuVuc ? 600 : 400, color: khuVuc ? '#2d6a9f' : '#333', minWidth: 140 }}>
+            <option value="">🗺 Tất cả khu vực</option>
+            {dsmList.map(r => (
+              <option key={r.nhan_vien} value={r.nhan_vien}>{r.nhan_vien}</option>
+            ))}
+          </select>
           {/* Tìm kiếm */}
           <input
-            placeholder="🔍 Tìm tên TDV/DSM..."
+            placeholder="🔍 Tìm tên TDV..."
             value={filter}
             onChange={e => setFilter(e.target.value)}
-            style={{ padding: '8px 14px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, width: 200 }}
+            style={{ padding: '8px 14px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, width: 180 }}
           />
           {/* Toggle xem chỉ tiêu năm */}
           <button
@@ -124,9 +145,12 @@ export default function MucTieu() {
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 14, height: 14, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 3, display: 'inline-block' }} /> TDV / CTV
             </span>
-            <span style={{ marginLeft: 'auto', color: '#888' }}>
-              {rows.length} dòng | {thang === 0 ? `Cả năm ${nam}` : `${MONTHS[thang]} ${nam}`}
-              {thang === 0 && <span style={{ marginLeft: 8, background: '#e8f0fb', color: '#2d6a9f', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>Chỉ tiêu năm</span>}
+            <span style={{ marginLeft: 'auto', color: '#888', display: 'flex', alignItems: 'center', gap: 6 }}>
+              {rows.length} dòng
+              {khuVuc && <span style={{ background: '#2d6a9f', color: '#fff', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>{khuVuc}</span>}
+              <span style={{ color: '#bbb' }}>|</span>
+              {thang === 0 ? `Cả năm ${nam}` : `${MONTHS[thang]} ${nam}`}
+              {thang === 0 && <span style={{ background: '#e8f0fb', color: '#2d6a9f', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>Chỉ tiêu năm</span>}
             </span>
           </div>
 
