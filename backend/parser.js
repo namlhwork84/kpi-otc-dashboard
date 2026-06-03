@@ -8,11 +8,10 @@ function normChiSo(s) {
     .replace('Số lượng khách hàng mua TB/THÁNG', 'Số lượng độ phủ TB/THÁNG');
 }
 
-// Parse bất kỳ file chỉ tiêu nào có cấu trúc: cột 0=STT,1=NHÓM,2=NHÂN VIÊN,3=CHỈ SỐ,4=CHỈ TIÊU NĂM,5+=tháng
+// Parse bất kỳ file chỉ tiêu nào — trả về tất cả 12 tháng
 function parseChiTieuFile(buffer, nam, thang, nguon) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
 
-  // Tìm sheet phù hợp
   const sheetName =
     wb.SheetNames.find(s => s.includes('Chỉ tiêu SPTT')) ||
     wb.SheetNames.find(s => s.includes('CHỈ TIÊU NĂM')) ||
@@ -26,12 +25,11 @@ function parseChiTieuFile(buffer, nam, thang, nguon) {
   let headerRow = -1;
   for (let i = 0; i < Math.min(15, rows.length); i++) {
     if (rows[i] && rows[i].some(c => c && String(c).includes('Tháng 1'))) {
-      headerRow = i;
-      break;
+      headerRow = i; break;
     }
   }
-  // Col index cho tháng: header row có [null, null, null, null, null, "Tháng 1", "Tháng 2"...]
-  // Tìm vị trí "Tháng 1" để tính offset
+
+  // Tìm cột "Tháng 1"
   let thang1Col = 5;
   if (headerRow >= 0) {
     const hRow = rows[headerRow];
@@ -39,11 +37,10 @@ function parseChiTieuFile(buffer, nam, thang, nguon) {
       if (hRow[c] && String(hRow[c]).trim() === 'Tháng 1') { thang1Col = c; break; }
     }
   }
-  const monthColIndex = thang1Col + thang - 1;
 
   const results = [];
   let currentNhom = null;
-  let currentDSM = null; // DSM cha hiện tại
+  let currentDSM = null;
   const startRow = headerRow >= 0 ? headerRow + 1 : 3;
 
   for (let i = startRow; i < rows.length; i++) {
@@ -53,31 +50,38 @@ function parseChiTieuFile(buffer, nam, thang, nguon) {
     const nhanVien = String(row[2]).trim();
     const chiSo = normChiSo(String(row[3]));
     const chiTieuNam = parseFloat(row[4]) || 0;
-    const giaTriThang = parseFloat(row[monthColIndex]) || 0;
 
     if (!nhanVien || nhanVien === 'NHÂN VIÊN' || nhanVien === '\xa0' || nhanVien === ' ') continue;
     if (!chiSo || chiSo === 'CHỈ SỐ') continue;
     if (nhanVien.startsWith('Nơi nhận') || nhanVien.startsWith('Ban Giám')) continue;
 
-    if (row[1] && String(row[1]).trim() && !String(row[1]).trim().startsWith('-') && String(row[1]).trim() !== 'Nơi nhận:' && String(row[1]).trim() !== '\xa0') {
+    if (row[1] && String(row[1]).trim() && !String(row[1]).trim().startsWith('-') &&
+        String(row[1]).trim() !== 'Nơi nhận:' && String(row[1]).trim() !== '\xa0') {
       currentNhom = String(row[1]).trim();
     }
 
-    // Track DSM cha: dòng nào có nhan_vien bắt đầu bằng DSM hoặc CCO thì là DSM level
     const isDSM = nhanVien.startsWith('DSM') || nhanVien === 'CCO' || nhanVien === 'TỔNG KÊNH';
     if (isDSM && nhanVien !== 'TỔNG KÊNH') currentDSM = nhanVien;
 
-    results.push({
-      nam,
-      thang,
-      nhom: currentNhom,
-      parent_dsm: isDSM ? null : currentDSM,
-      nhan_vien: nhanVien,
-      chi_so: chiSo,
-      chi_tieu_nam: chiTieuNam,
-      gia_tri: giaTriThang,
-      nguon: nguon || 'sptt'
-    });
+    // Tạo 1 record cho mỗi tháng có dữ liệu (tháng 1-12)
+    for (let t = 1; t <= 12; t++) {
+      const colIdx = thang1Col + t - 1;
+      const giaTriThang = parseFloat(row[colIdx]) || 0;
+      // Bỏ qua tháng không có dữ liệu (0 và không phải TỔNG KÊNH/DSM)
+      if (giaTriThang === 0 && !isDSM && nhanVien !== 'TỔNG KÊNH') continue;
+
+      results.push({
+        nam,
+        thang: t,
+        nhom: currentNhom,
+        parent_dsm: isDSM ? null : currentDSM,
+        nhan_vien: nhanVien,
+        chi_so: chiSo,
+        chi_tieu_nam: chiTieuNam,
+        gia_tri: giaTriThang,
+        nguon: nguon || 'sptt'
+      });
+    }
   }
 
   return results;

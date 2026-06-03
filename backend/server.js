@@ -66,10 +66,10 @@ app.post('/api/upload/chi-tieu', upload.single('file'), (req, res) => {
     const db = loadDB();
     const nam = parseInt(req.body.nam);
     const thang = parseInt(req.body.thang);
-    const nguon = req.body.nguon || 'sptt'; // 'sptt' hoặc 'ke_hoach'
+    const nguon = req.body.nguon || 'sptt';
 
-    // Xóa dữ liệu cũ cùng kỳ và nguồn
-    db.chi_tieu = db.chi_tieu.filter(r => !(r.nam === nam && r.thang === thang && (r.nguon || 'sptt') === nguon));
+    // Xóa toàn bộ năm đó (vì parse 12 tháng cùng lúc)
+    db.chi_tieu = db.chi_tieu.filter(r => !(r.nam === nam && (r.nguon || 'sptt') === nguon));
 
     const parseFn = nguon === 'ke_hoach' ? parseChiTieuKeHoach : parseChiTieuSPTT;
     const records = parseFn(req.file.buffer, nam, thang);
@@ -77,7 +77,7 @@ app.post('/api/upload/chi-tieu', upload.single('file'), (req, res) => {
     db.chi_tieu.push(...records);
 
     const uploadId = db.nextId.uploads++;
-    db.uploads.push({ id: uploadId, file_name: req.file.originalname, file_type: 'chi_tieu', nam, thang, created_at: new Date().toISOString() });
+    db.uploads.push({ id: uploadId, file_name: req.file.originalname, file_type: 'chi_tieu', nam, thang: 0, created_at: new Date().toISOString() });
 
     saveDB(db);
     res.json({ ok: true, count: records.length });
