@@ -81,7 +81,8 @@ export default function MucTieu() {
             {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           <select value={thang} onChange={e => setThang(parseInt(e.target.value))}
-            style={{ padding: '8px 12px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13 }}>
+            style={{ padding: '8px 12px', border: '1.5px solid #e0e0e0', borderRadius: 8, fontSize: 13, fontWeight: thang === 0 ? 600 : 400 }}>
+            <option value={0}>📅 Cả năm {nam}</option>
             {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => <option key={m} value={m}>{MONTHS[m]}</option>)}
           </select>
           {/* Tìm kiếm */}
@@ -124,7 +125,8 @@ export default function MucTieu() {
               <span style={{ width: 14, height: 14, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 3, display: 'inline-block' }} /> TDV / CTV
             </span>
             <span style={{ marginLeft: 'auto', color: '#888' }}>
-              {rows.length} dòng | {MONTHS[thang]} {nam}
+              {rows.length} dòng | {thang === 0 ? `Cả năm ${nam}` : `${MONTHS[thang]} ${nam}`}
+              {thang === 0 && <span style={{ marginLeft: 8, background: '#e8f0fb', color: '#2d6a9f', borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>Chỉ tiêu năm</span>}
             </span>
           </div>
 

@@ -339,9 +339,11 @@ app.get('/api/muc-tieu', (req, res) => {
   const db = loadDB();
   const { nam, thang } = req.query;
   const namInt = parseInt(nam || 2026);
-  const thangInt = parseInt(thang || 4);
+  const thangInt = parseInt(thang || 4); // 0 = cả năm
 
-  const rows = db.chi_tieu.filter(r => r.nam === namInt && r.thang === thangInt);
+  // Khi thang=0: lấy tháng 1 để lấy parent_dsm/nhom, nhưng dùng chi_tieu_nam làm gia_tri
+  const filterThang = thangInt === 0 ? 1 : thangInt;
+  const rows = db.chi_tieu.filter(r => r.nam === namInt && r.thang === filterThang);
 
   // Pivot: map[nhan_vien] → object chứa tất cả chi_so
   const pivot = {};
@@ -349,13 +351,15 @@ app.get('/api/muc-tieu', (req, res) => {
 
   rows.forEach(r => {
     const nv = r.nhan_vien;
+    // Khi cả năm: dùng chi_tieu_nam thay gia_tri
+    const giaTriHienThi = thangInt === 0 ? r.chi_tieu_nam : r.gia_tri;
     if (!pivot[nv]) pivot[nv] = {
       nhan_vien: nv,
       nhom: r.nhom,
       parent_dsm: r.parent_dsm || null,
       nguon: r.nguon
     };
-    pivot[nv][r.chi_so] = r.gia_tri;
+    pivot[nv][r.chi_so] = giaTriHienThi;
     pivot[nv][r.chi_so + '_nam'] = r.chi_tieu_nam;
     allChiSo.add(r.chi_so);
   });
