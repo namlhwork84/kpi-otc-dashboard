@@ -29,6 +29,8 @@ export const uploadDoanhSo = (file, nam, thang) => {
 };
 
 export const getUploads = () => api.get('/uploads');
+export const getDataSummary = () => api.get('/data-summary');
+export const deleteThangData = (nam, thang) => api.delete(`/data/doanh-so/${nam}/${thang}`);
 export const getSummary = (params) => api.get('/dashboard/summary', { params });
 export const getTheoDSM = (params) => api.get('/dashboard/theo-dsm', { params });
 export const getTheoTDV = (params) => api.get('/dashboard/theo-tdv', { params });

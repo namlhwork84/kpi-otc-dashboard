@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { uploadChiTieu, uploadDoanhSo, getUploads } from '../api';
+import { uploadChiTieu, uploadDoanhSo, getUploads, getDataSummary, deleteThangData } from '../api';
 
 const MONTHS = ['', 'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
 
@@ -74,23 +74,47 @@ function UploadBox({ title, desc, onUpload, loading, color }) {
   );
 }
 
+function fmtTien(v) {
+  if (!v) return '0';
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + ' tỷ';
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + ' tr';
+  return v.toLocaleString('vi-VN');
+}
+
+const MONTH_NAMES = ['', 'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
+
 export default function Upload() {
   const [uploads, setUploads] = useState([]);
+  const [dataSummary, setDataSummary] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(null);
 
-  useEffect(() => {
+  const reload = () => {
     getUploads().then(r => setUploads(r.data)).catch(() => {});
-  }, []);
+    getDataSummary().then(r => setDataSummary(r.data)).catch(() => {});
+  };
+
+  useEffect(() => { reload(); }, []);
 
   const handleUpload = async (fn, file, nam, thang) => {
     setLoading(true);
     try {
       const res = await fn(file, nam, thang);
-      const ups = await getUploads();
-      setUploads(ups.data);
+      reload();
       return res;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (nam, thang) => {
+    if (!confirm(`Xóa toàn bộ dữ liệu doanh số ${MONTH_NAMES[thang]}/${nam}?\n\nMục tiêu KPI sẽ KHÔNG bị ảnh hưởng.`)) return;
+    setDeleting(`${nam}-${thang}`);
+    try {
+      await deleteThangData(nam, thang);
+      reload();
+    } finally {
+      setDeleting(null);
     }
   };
 
@@ -116,6 +140,47 @@ export default function Upload() {
           loading={loading}
           color="#2e7d32"
         />
+      </div>
+
+      {/* Dữ liệu hiện có theo tháng — sửa/xóa/upload lại */}
+      <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 24 }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 600, color: '#333' }}>📅 Dữ liệu doanh số hiện có</h3>
+        <p style={{ margin: '0 0 16px', fontSize: 12, color: '#888' }}>
+          Để <strong>sửa lại</strong> một tháng: chỉ cần upload lại file của tháng đó ở trên — hệ thống tự ghi đè.
+          Để <strong>xóa</strong>: bấm nút Xóa bên dưới (Mục tiêu KPI không bị ảnh hưởng).
+        </p>
+        {dataSummary.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: '#ccc' }}>Chưa có dữ liệu doanh số nào</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f5f7fa' }}>
+                {['Kỳ', 'Số dòng', 'Số đơn hàng', 'Tổng doanh số', ''].map(h => (
+                  <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Kỳ' || h === '' ? 'left' : 'right', fontWeight: 600, color: '#555', borderBottom: '2px solid #eee' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dataSummary.map((d, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #f0f0f0', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
+                  <td style={{ padding: '11px 14px', fontWeight: 600, color: '#1e3a5f' }}>{MONTH_NAMES[d.thang]} / {d.nam}</td>
+                  <td style={{ padding: '11px 14px', textAlign: 'right', color: '#666' }}>{d.so_dong.toLocaleString('vi-VN')}</td>
+                  <td style={{ padding: '11px 14px', textAlign: 'right', color: '#666' }}>{d.so_don_hang.toLocaleString('vi-VN')}</td>
+                  <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 600, color: '#2e7d32' }}>{fmtTien(d.doanh_so)}</td>
+                  <td style={{ padding: '11px 14px' }}>
+                    <button
+                      onClick={() => handleDelete(d.nam, d.thang)}
+                      disabled={deleting === `${d.nam}-${d.thang}`}
+                      style={{ padding: '6px 14px', background: '#fff0f0', border: '1px solid #ffcdd2', borderRadius: 6, fontSize: 12, color: '#c62828', cursor: 'pointer', fontWeight: 600 }}
+                    >
+                      {deleting === `${d.nam}-${d.thang}` ? 'Đang xóa...' : '🗑 Xóa tháng này'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div style={{ background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>

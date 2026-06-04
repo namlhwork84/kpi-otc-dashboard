@@ -108,9 +108,18 @@ app.post('/api/upload/doanh-so', upload.single('file'), (req, res) => {
     const nam = parseInt(req.body.nam);
     const thang = parseInt(req.body.thang);
 
-    db.doanh_so = db.doanh_so.filter(r => !(r.nam === nam && r.thang === thang));
-
     const records = parseDuLieu(req.file.buffer, nam, thang);
+
+    // Bảo vệ: từ chối file lỗi/rỗng để không xóa nhầm dữ liệu cũ
+    if (records.length < 5) {
+      return res.status(400).json({ error: `File không hợp lệ — chỉ đọc được ${records.length} dòng. Kiểm tra lại file Sổ Chi Tiết Bán Hàng.`, count: records.length });
+    }
+
+    // Xóa theo đúng kỳ người chọn VÀ các kỳ thực có trong file (tránh sót)
+    const periods = new Set(records.map(r => `${r.nam}-${r.thang}`));
+    periods.add(`${nam}-${thang}`);
+    db.doanh_so = db.doanh_so.filter(r => !periods.has(`${r.nam}-${r.thang}`));
+
     records.forEach(r => { r.id = db.nextId.doanh_so++; });
     db.doanh_so.push(...records);
 
@@ -128,6 +137,37 @@ app.post('/api/upload/doanh-so', upload.single('file'), (req, res) => {
 app.get('/api/uploads', (req, res) => {
   const db = loadDB();
   res.json(db.uploads.slice(-20).reverse());
+});
+
+// Thống kê dữ liệu doanh số theo từng tháng
+app.get('/api/data-summary', (req, res) => {
+  const db = loadDB();
+  const map = {};
+  db.doanh_so.forEach(r => {
+    const key = `${r.nam}-${r.thang}`;
+    if (!map[key]) map[key] = { nam: r.nam, thang: r.thang, so_dong: 0, doanh_so: 0, so_ct: new Set() };
+    map[key].so_dong++;
+    map[key].doanh_so += r.doanh_so_thuc_dat || 0;
+    if (r.so_chung_tu) map[key].so_ct.add(r.so_chung_tu);
+  });
+  const result = Object.values(map)
+    .map(m => ({ nam: m.nam, thang: m.thang, so_dong: m.so_dong, doanh_so: m.doanh_so, so_don_hang: m.so_ct.size }))
+    .sort((a, b) => b.nam - a.nam || b.thang - a.thang);
+  res.json(result);
+});
+
+// Xóa dữ liệu doanh số của 1 tháng
+app.delete('/api/data/doanh-so/:nam/:thang', (req, res) => {
+  const db = loadDB();
+  const nam = parseInt(req.params.nam);
+  const thang = parseInt(req.params.thang);
+  const before = db.doanh_so.length;
+  db.doanh_so = db.doanh_so.filter(r => !(r.nam === nam && r.thang === thang));
+  const deleted = before - db.doanh_so.length;
+  // Xóa lịch sử upload tương ứng
+  db.uploads = db.uploads.filter(u => !(u.file_type === 'doanh_so' && u.nam === nam && u.thang === thang));
+  saveDB(db);
+  res.json({ ok: true, deleted });
 });
 
 // ─── CẤU HÌNH SẢN PHẨM TRỌNG TÂM (SPTT) ─────────────────────────────────────
