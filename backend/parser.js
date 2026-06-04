@@ -134,6 +134,9 @@ function parseDuLieu(buffer, nam, thang) {
     const tenNV = row[col['Tên nhân viên bán hàng']];
     if (!ngay || !tenNV) continue;
 
+    // Loại trừ "Kênh Ủy Thác" khỏi dữ liệu KPI
+    if (String(tenNV).toLowerCase().includes('ủy thác') || String(tenNV).toLowerCase().includes('uy thac')) continue;
+
     let ngayStr = '';
     if (ngay instanceof Date) ngayStr = ngay.toISOString().split('T')[0];
     else ngayStr = String(ngay).substring(0, 10);
