@@ -2,9 +2,11 @@ import { useState } from 'react';
 import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import MucTieu from './pages/MucTieu';
+import KpiThucDat from './pages/KpiThucDat';
 
 const NAV = [
   { id: 'dashboard', label: '📊 Dashboard' },
+  { id: 'kpi-thuc-dat', label: '📈 KPI Thực Đạt' },
   { id: 'muc-tieu', label: '🎯 Mục Tiêu KPI' },
   { id: 'upload', label: '📂 Dữ liệu' },
 ];
@@ -29,6 +31,7 @@ export default function App() {
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
         {page === 'dashboard' && <Dashboard />}
+        {page === 'kpi-thuc-dat' && <KpiThucDat />}
         {page === 'muc-tieu' && <MucTieu />}
         {page === 'upload' && <Upload />}
       </div>

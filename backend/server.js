@@ -459,6 +459,167 @@ app.get('/api/muc-tieu', (req, res) => {
   res.json({ rows: result, chi_so_list: orderedChiSo });
 });
 
+// ─── KPI THỰC ĐẠT ────────────────────────────────────────────────────────────
+const TMAP = JSON.parse(require('fs').readFileSync(path.join(__dirname, 'territory_map.json'), 'utf-8'));
+
+function getDSMofTDV(tdvName, tinhTP) {
+  if (!tdvName) return null;
+  const name = tdvName.trim();
+  // 1. Tra trực tiếp trong tdv_to_dsm
+  if (TMAP.tdv_to_dsm[name]) return TMAP.tdv_to_dsm[name];
+  // 2. Fuzzy: tìm key nào là substring của name hoặc ngược lại
+  for (const [k, v] of Object.entries(TMAP.tdv_to_dsm)) {
+    const kn = k.toLowerCase(); const nn = name.toLowerCase();
+    if (nn.includes(kn) || kn.includes(nn)) return v;
+  }
+  // 3. Fallback: dùng tỉnh/thành phố
+  if (tinhTP && TMAP.province_to_dsm[tinhTP.trim()]) return TMAP.province_to_dsm[tinhTP.trim()];
+  return null;
+}
+
+function normTDVName(bcbhName) {
+  if (!bcbhName) return bcbhName;
+  const n = bcbhName.trim();
+  return TMAP.tdv_name_to_chitieu[n] || n;
+}
+
+app.get('/api/kpi-thuc-dat', (req, res) => {
+  const db = loadDB();
+  const { nam, thang } = req.query;
+  const namInt = parseInt(nam || 2026);
+  const thangInt = parseInt(thang || 4);
+
+  // Lọc giao dịch theo tháng
+  const rows = db.doanh_so.filter(r => r.nam === namInt && r.thang === thangInt);
+
+  // Build cấu trúc: dsmData[dsm][tdv] = { ds, dh, kh, sptt }
+  const dsmData = {};
+
+  for (const r of rows) {
+    const dsm = getDSMofTDV(r.ten_nhan_vien, r.tinh_thanh_pho) || 'Khác';
+    const tdvBCBH = r.ten_nhan_vien || 'Khác';
+
+    if (!dsmData[dsm]) dsmData[dsm] = {};
+    if (!dsmData[dsm][tdvBCBH]) dsmData[dsm][tdvBCBH] = { ds: 0, dh: new Set(), kh: new Set(), sptt: 0 };
+
+    const d = dsmData[dsm][tdvBCBH];
+    d.ds += r.doanh_so_thuc_dat || 0;
+    if (r.so_chung_tu) d.dh.add(r.so_chung_tu);
+    if (r.ten_khach_hang) d.kh.add(r.ten_khach_hang);
+    if (isSptt(r.ten_hang)) d.sptt += r.so_luong_ban || 0;
+  }
+
+  // Lấy targets từ chi_tieu
+  const ctRows = db.chi_tieu.filter(r => r.nam === namInt && r.thang === thangInt);
+  const ctMap = {};
+  ctRows.forEach(r => {
+    const nv = r.nhan_vien;
+    if (!ctMap[nv]) ctMap[nv] = {};
+    ctMap[nv][r.chi_so] = r.gia_tri;
+  });
+
+  function getTarget(tdvBCBH) {
+    const ctName = normTDVName(tdvBCBH);
+    return ctMap[ctName] || ctMap[tdvBCBH] || {};
+  }
+
+  function pct(actual, target) {
+    if (!target || target === 0) return null;
+    return Math.round(actual / target * 1000) / 10;
+  }
+
+  // Build kết quả theo thứ tự DSM
+  const result = [];
+  let tongKenhDS = 0, tongKenhDH = new Set(), tongKenhKH = new Set(), tongKenhSPTT = 0;
+
+  for (const dsmKey of TMAP.dsm_order) {
+    const dsmInfo = TMAP.dsm_groups[dsmKey];
+    if (!dsmInfo) continue;
+
+    const tdvMap = dsmData[dsmKey] || {};
+
+    // DSM target: lấy từ chi_tieu cấp DSM
+    const dsmCTKey = dsmKey === 'DSM1' ? 'DSM 01'
+      : dsmKey === 'DSM2' ? 'DSM 02'
+      : dsmKey === 'DSM3' ? 'DSM 03'
+      : dsmKey === 'OTC4' ? 'DSM 04'
+      : dsmKey === 'DSM5' ? 'DSM 5'
+      : 'CCO';
+    const dsmTarget = ctMap[dsmCTKey] || {};
+
+    // Tính tổng DSM từ các TDV
+    let dsmDS = 0, dsmDH = new Set(), dsmKH = new Set(), dsmSPTT = 0;
+    const tdvRows = [];
+
+    for (const [tdvBCBH, d] of Object.entries(tdvMap)) {
+      const t = getTarget(tdvBCBH);
+      const ds = d.ds, dh = d.dh.size, kh = d.kh.size, sptt = d.sptt;
+      const gttb = dh > 0 ? Math.round(ds / dh) : 0;
+
+      dsmDS += ds; d.dh.forEach(x => dsmDH.add(x)); d.kh.forEach(x => dsmKH.add(x)); dsmSPTT += sptt;
+      tongKenhDS += ds; d.dh.forEach(x => tongKenhDH.add(x)); d.kh.forEach(x => tongKenhKH.add(x)); tongKenhSPTT += sptt;
+
+      tdvRows.push({
+        level: 'tdv', dsm: dsmKey, dsm_label: dsmInfo.label,
+        name: tdvBCBH, name_chitieu: normTDVName(tdvBCBH),
+        ds, dh, kh, sptt, gttb,
+        mt_ds: t['Doanh số'] || 0,
+        mt_dh: t['Số lượng đơn hàng'] || 0,
+        mt_kh: t['Số lượng độ phủ TB/THÁNG'] || 0,
+        mt_sptt: t['Sản phẩm trọng tâm'] || 0,
+        mt_gttb: t['Giá trị trung bình đơn hàng'] || 0,
+        pct_ds: pct(ds, t['Doanh số']),
+        pct_dh: pct(dh, t['Số lượng đơn hàng']),
+        pct_kh: pct(kh, t['Số lượng độ phủ TB/THÁNG']),
+        pct_sptt: pct(sptt, t['Sản phẩm trọng tâm']),
+        pct_gttb: pct(gttb, t['Giá trị trung bình đơn hàng']),
+      });
+    }
+
+    if (Object.keys(tdvMap).length === 0 && !dsmTarget['Doanh số']) continue;
+
+    const dsmDH_n = dsmDH.size, dsmKH_n = dsmKH.size;
+    const dsmGTTB = dsmDH_n > 0 ? Math.round(dsmDS / dsmDH_n) : 0;
+
+    result.push({
+      level: 'dsm', dsm: dsmKey, dsm_label: dsmInfo.label, name: dsmInfo.label,
+      ds: dsmDS, dh: dsmDH_n, kh: dsmKH_n, sptt: dsmSPTT, gttb: dsmGTTB,
+      mt_ds: dsmTarget['Doanh số'] || 0,
+      mt_dh: dsmTarget['Số lượng đơn hàng'] || 0,
+      mt_kh: dsmTarget['Số lượng độ phủ TB/THÁNG'] || 0,
+      mt_sptt: dsmTarget['Sản phẩm trọng tâm'] || 0,
+      mt_gttb: dsmTarget['Giá trị trung bình đơn hàng'] || 0,
+      pct_ds: pct(dsmDS, dsmTarget['Doanh số']),
+      pct_dh: pct(dsmDH_n, dsmTarget['Số lượng đơn hàng']),
+      pct_kh: pct(dsmKH_n, dsmTarget['Số lượng độ phủ TB/THÁNG']),
+      pct_sptt: pct(dsmSPTT, dsmTarget['Sản phẩm trọng tâm']),
+      pct_gttb: pct(dsmGTTB, dsmTarget['Giá trị trung bình đơn hàng']),
+    });
+    result.push(...tdvRows.sort((a, b) => b.ds - a.ds));
+  }
+
+  // Tổng kênh
+  const tkDH = tongKenhDH.size, tkKH = tongKenhKH.size;
+  const tkGTTB = tkDH > 0 ? Math.round(tongKenhDS / tkDH) : 0;
+  const tkTarget = ctMap['TỔNG KÊNH'] || {};
+
+  result.unshift({
+    level: 'total', name: 'TỔNG KÊNH OTC',
+    ds: tongKenhDS, dh: tkDH, kh: tkKH, sptt: tongKenhSPTT, gttb: tkGTTB,
+    mt_ds: tkTarget['Doanh số'] || 0, mt_dh: tkTarget['Số lượng đơn hàng'] || 0,
+    mt_kh: tkTarget['Số lượng độ phủ TB/THÁNG'] || 0,
+    mt_sptt: tkTarget['Sản phẩm trọng tâm'] || 0,
+    mt_gttb: tkTarget['Giá trị trung bình đơn hàng'] || 0,
+    pct_ds: pct(tongKenhDS, tkTarget['Doanh số']),
+    pct_dh: pct(tkDH, tkTarget['Số lượng đơn hàng']),
+    pct_kh: pct(tkKH, tkTarget['Số lượng độ phủ TB/THÁNG']),
+    pct_sptt: pct(tongKenhSPTT, tkTarget['Sản phẩm trọng tâm']),
+    pct_gttb: pct(tkGTTB, tkTarget['Giá trị trung bình đơn hàng']),
+  });
+
+  res.json(result);
+});
+
 // Mọi route không phải /api → trả về React app
 app.get('*', (req, res) => {
   res.sendFile(path.join(DIST, 'index.html'));
