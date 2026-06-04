@@ -130,6 +130,15 @@ app.get('/api/uploads', (req, res) => {
   res.json(db.uploads.slice(-20).reverse());
 });
 
+// ─── CẤU HÌNH SẢN PHẨM TRỌNG TÂM (SPTT) ─────────────────────────────────────
+const SPTT_PRODUCTS = ['solufemo', 'bocalsontb', 'bocalso'];
+
+function isSptt(tenHang) {
+  if (!tenHang) return false;
+  const lower = tenHang.toLowerCase();
+  return SPTT_PRODUCTS.some(p => lower.includes(p));
+}
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 // Bảng mapping: ten_nhom_kh trong doanh_so → DSM chuẩn
@@ -200,6 +209,8 @@ app.get('/api/dashboard/summary', (req, res) => {
   const tongDS = dsRows.reduce((s, r) => s + (r.doanh_so_thuc_dat || 0), 0);
   const soDH = new Set(dsRows.map(r => r.so_chung_tu).filter(Boolean)).size;
   const soKH = new Set(dsRows.map(r => r.ten_khach_hang).filter(Boolean)).size;
+  // SPTT thực hiện = tổng số lượng bán của sản phẩm trọng tâm
+  const spttThucHien = dsRows.filter(r => isSptt(r.ten_hang)).reduce((s, r) => s + (r.so_luong_ban || 0), 0);
 
   res.json({
     doanh_so_thuc_hien: tongDS,
@@ -208,6 +219,7 @@ app.get('/api/dashboard/summary', (req, res) => {
     muc_tieu_dh: targets['Số lượng đơn hàng'] || 0,
     so_khach_hang: soKH,
     muc_tieu_do_phu: targets['Số lượng độ phủ TB/THÁNG'] || 0,
+    sptt_thuc_hien: spttThucHien,
     sptt_muc_tieu: targets['Sản phẩm trọng tâm'] || 0
   });
 });
@@ -263,10 +275,11 @@ app.get('/api/dashboard/theo-tdv', (req, res) => {
     .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4) && (!dsm || normDSM(r.ten_nhom_kh) === dsm))
     .forEach(r => {
       const key = r.ten_nhan_vien || 'Khác';
-      if (!tdvMap[key]) tdvMap[key] = { ds: 0, dh: new Set(), kh: new Set() };
+      if (!tdvMap[key]) tdvMap[key] = { ds: 0, dh: new Set(), kh: new Set(), sptt: 0 };
       tdvMap[key].ds += r.doanh_so_thuc_dat || 0;
       if (r.so_chung_tu) tdvMap[key].dh.add(r.so_chung_tu);
       if (r.ten_khach_hang) tdvMap[key].kh.add(r.ten_khach_hang);
+      if (isSptt(r.ten_hang)) tdvMap[key].sptt += r.so_luong_ban || 0;
     });
 
   const ctMap = {};
@@ -288,6 +301,7 @@ app.get('/api/dashboard/theo-tdv', (req, res) => {
       pct_ht: mucTieu > 0 ? Math.round((d.ds / mucTieu) * 1000) / 10 : 0,
       so_dh: d.dh.size,
       so_kh: d.kh.size,
+      sptt_thuc_hien: d.sptt,
       muc_tieu_dh: t['Số lượng đơn hàng'] || 0,
       muc_tieu_do_phu: t['Số lượng độ phủ TB/THÁNG'] || 0,
       muc_tieu_sptt: t['Sản phẩm trọng tâm'] || 0

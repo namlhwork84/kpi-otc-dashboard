@@ -92,7 +92,7 @@ export default function Dashboard() {
             <KPICard title="Doanh số thực hiện" actual={summary.doanh_so_thuc_hien} target={summary.muc_tieu_ds} icon="💰" />
             <KPICard title="Số đơn hàng" actual={summary.so_don_hang} target={summary.muc_tieu_dh} icon="🧾" />
             <KPICard title="Độ phủ (KH)" actual={summary.so_khach_hang} target={summary.muc_tieu_do_phu} icon="🏪" />
-            <KPICard title="SP Trọng tâm (MT)" actual={summary.sptt_muc_tieu} target={summary.sptt_muc_tieu} icon="⭐" />
+            <KPICard title="SPTT (Solufemo+Bocalso)" actual={summary.sptt_thuc_hien} target={summary.sptt_muc_tieu} icon="⭐" unit=" hộp" />
           </div>
 
           {/* Trend theo tuần */}
@@ -185,7 +185,7 @@ export default function Dashboard() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                     <thead>
                       <tr style={{ background: '#f5f7fa' }}>
-                        {['#', 'TDV/CTV', 'Thực hiện', 'Mục tiêu DS', '% HT DS', 'Đơn hàng', 'MT Đơn', 'Độ phủ', 'MT Phủ', 'MT SPTT'].map(h => (
+                        {['#', 'TDV/CTV', 'Thực hiện', 'Mục tiêu DS', '% HT DS', 'Đơn hàng', 'MT Đơn', 'Độ phủ', 'MT Phủ', 'SPTT TH', 'MT SPTT', '% SPTT'].map(h => (
                           <th key={h} style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600, color: '#555', borderBottom: '2px solid #eee', whiteSpace: 'nowrap', ...(h === 'TDV/CTV' || h === '#' ? { textAlign: 'left' } : {}) }}>{h}</th>
                         ))}
                       </tr>
@@ -202,7 +202,11 @@ export default function Dashboard() {
                           <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>{row.muc_tieu_dh || '-'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right' }}>{row.so_kh}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>{row.muc_tieu_do_phu || '-'}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{row.sptt_thuc_hien || '-'}</td>
                           <td style={{ padding: '8px 12px', textAlign: 'right', color: '#888' }}>{row.muc_tieu_sptt || '-'}</td>
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: pctColor(row.muc_tieu_sptt > 0 ? (row.sptt_thuc_hien/row.muc_tieu_sptt*100) : 0) }}>
+                            {row.muc_tieu_sptt > 0 ? Math.round(row.sptt_thuc_hien/row.muc_tieu_sptt*100)+'%' : '-'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
