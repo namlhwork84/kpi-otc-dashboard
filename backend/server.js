@@ -121,6 +121,23 @@ app.get('/api/uploads', (req, res) => {
 });
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
+
+// Bảng mapping: ten_nhom_kh trong doanh_so → DSM chuẩn
+const DSM_MAP = {
+  'DSM1': 'DSM1', 'DSM2': 'DSM2', 'DSM3': 'DSM3', 'DSM4': 'DSM4', 'DSM5': 'DSM5',
+  'CCO-Chuỗi': 'CCO-Chuỗi', 'CCO-O2': 'CCO-O2', 'CCO-O4': 'CCO-O4',
+  // Địa bàn thuộc DSM1 (Hà Nội)
+  'Quận Cầu Giấy': 'DSM1',
+  'Quận Bắc Từ Liêm': 'DSM1',
+  // OTC TLS (Nguyễn Việt Cường - PT) thuộc DSM2
+  'OTC TLS': 'DSM2',
+};
+
+function normDSM(nhomKH) {
+  if (!nhomKH) return nhomKH;
+  return DSM_MAP[nhomKH] || nhomKH;
+}
+
 function getWeekOfMonth(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d)) return 0;
@@ -130,7 +147,7 @@ function getWeekOfMonth(dateStr) {
 
 function filterDS(db, { nam, thang, dsm, tdv, tuan }) {
   let rows = db.doanh_so.filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4));
-  if (dsm) rows = rows.filter(r => r.ten_nhom_kh === dsm);
+  if (dsm) rows = rows.filter(r => normDSM(r.ten_nhom_kh) === dsm);
   if (tdv) rows = rows.filter(r => r.ten_nhan_vien === tdv);
   if (tuan) rows = rows.filter(r => r.ngay_hach_toan && getWeekOfMonth(r.ngay_hach_toan) === parseInt(tuan));
   return rows;
@@ -194,7 +211,7 @@ app.get('/api/dashboard/theo-dsm', (req, res) => {
   db.doanh_so
     .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4))
     .forEach(r => {
-      const key = r.ten_nhom_kh || 'Khác';
+      const key = normDSM(r.ten_nhom_kh) || 'Khác'; // chuẩn hóa về DSM đúng
       if (!dsmMap[key]) dsmMap[key] = { ds: 0, dh: new Set(), kh: new Set() };
       dsmMap[key].ds += r.doanh_so_thuc_dat || 0;
       if (r.so_chung_tu) dsmMap[key].dh.add(r.so_chung_tu);
@@ -233,7 +250,7 @@ app.get('/api/dashboard/theo-tdv', (req, res) => {
 
   const tdvMap = {};
   db.doanh_so
-    .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4) && (!dsm || r.ten_nhom_kh === dsm))
+    .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4) && (!dsm || normDSM(r.ten_nhom_kh) === dsm))
     .forEach(r => {
       const key = r.ten_nhan_vien || 'Khác';
       if (!tdvMap[key]) tdvMap[key] = { ds: 0, dh: new Set(), kh: new Set() };
@@ -312,7 +329,7 @@ app.get('/api/metadata/dsm', (req, res) => {
   const dsms = [...new Set(
     db.doanh_so
       .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4))
-      .map(r => r.ten_nhom_kh).filter(Boolean)
+      .map(r => normDSM(r.ten_nhom_kh)).filter(Boolean)
   )].sort();
   res.json(dsms);
 });
@@ -322,7 +339,7 @@ app.get('/api/metadata/tdv', (req, res) => {
   const { nam, thang, dsm } = req.query;
   const tdvs = [...new Set(
     db.doanh_so
-      .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4) && (!dsm || r.ten_nhom_kh === dsm))
+      .filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4) && (!dsm || normDSM(r.ten_nhom_kh) === dsm))
       .map(r => r.ten_nhan_vien).filter(Boolean)
   )].sort();
   res.json(tdvs);
