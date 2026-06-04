@@ -98,28 +98,20 @@ export default function Upload() {
     <div style={{ padding: '20px 24px' }}>
       <h2 style={{ margin: '0 0 20px', fontSize: 20, fontWeight: 700, color: '#1e3a5f' }}>Quản lý dữ liệu</h2>
 
-      <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#555' }}>📋 Chỉ tiêu mục tiêu</div>
-      <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 20 }}>
-        <UploadBox
-          title="CHỈ TIÊU SPTT"
-          desc="File CHỈ TIÊU SPTT.xlsx — chứa Doanh số, Đơn hàng, Độ phủ, SPTT theo tháng cho từng TDV/DSM"
-          onUpload={(f, n, t) => handleUpload((file, nam, thang) => uploadChiTieu(file, nam, thang, 'sptt'), f, n, t)}
-          loading={loading}
-          color="#2d6a9f"
-        />
-        <UploadBox
-          title="CHỈ TIÊU KẾ HOẠCH"
-          desc="File CHỈ TIÊU KẾ HOẠCH.xlsx — chứa Doanh số, Đơn hàng, Số KH theo tháng cho từng TDV/DSM"
-          onUpload={(f, n, t) => handleUpload((file, nam, thang) => uploadChiTieu(file, nam, thang, 'ke_hoach'), f, n, t)}
-          loading={loading}
-          color="#6a2d9f"
-        />
+      {/* Thông báo mục tiêu đã cố định */}
+      <div style={{ background: '#e8f5e9', border: '1px solid #a5d6a7', borderRadius: 10, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontSize: 20 }}>🎯</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#2e7d32' }}>Mục tiêu KPI đã được cố định</div>
+          <div style={{ fontSize: 12, color: '#555', marginTop: 2 }}>Chỉ tiêu kế hoạch theo từng tháng/TDV/DSM đã được thiết lập sẵn — xem tại trang <strong>Mục Tiêu KPI</strong>. Không cần upload lại.</div>
+        </div>
       </div>
-      <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 600, color: '#555' }}>📈 Doanh số thực hiện</div>
+
+      <div style={{ marginBottom: 8, fontSize: 13, fontWeight: 700, color: '#1e3a5f' }}>📂 Upload dữ liệu thực hiện tháng</div>
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 28 }}>
         <UploadBox
-          title="Doanh số thực hiện"
-          desc="File 2026.T04.DSTT.OTC.xlsx hoặc file có sheet 'Sổ Chi Tiết Bán Hàng' / 'Dữ liệu'"
+          title="Sổ Chi Tiết Bán Hàng"
+          desc="Upload file xuất từ phần mềm kế toán — hệ thống tự tính Doanh số, Đơn hàng, Độ phủ, SPTT và so sánh với Mục tiêu KPI"
           onUpload={(f, n, t) => handleUpload(uploadDoanhSo, f, n, t)}
           loading={loading}
           color="#2e7d32"
