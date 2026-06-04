@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const path = require('path');
 const { loadDB, saveDB } = require('./db');
 const { parseChiTieuSPTT, parseDuLieu } = require('./parser');
 
@@ -8,6 +9,10 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors());
+
+// Serve React build (frontend/dist)
+const DIST = path.join(__dirname, '..', 'frontend', 'dist');
+app.use(express.static(DIST));
 app.use(express.json());
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
@@ -413,5 +418,10 @@ app.get('/api/muc-tieu', (req, res) => {
   res.json({ rows: result, chi_so_list: orderedChiSo });
 });
 
-const PORT = 3001;
-app.listen(PORT, () => console.log(`✅ Backend: http://localhost:${PORT}`));
+// Mọi route không phải /api → trả về React app
+app.get('*', (req, res) => {
+  res.sendFile(path.join(DIST, 'index.html'));
+});
+
+const PORT = 5173;
+app.listen(PORT, () => console.log(`✅ KPI OTC Dashboard: http://localhost:${PORT}`));
