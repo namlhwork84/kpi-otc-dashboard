@@ -73,11 +73,21 @@ app.post('/api/upload/chi-tieu', upload.single('file'), (req, res) => {
     const thang = parseInt(req.body.thang);
     const nguon = req.body.nguon || 'sptt';
 
+    const parseFn = nguon === 'ke_hoach' ? parseChiTieuKeHoach : parseChiTieuSPTT;
+    const records = parseFn(req.file.buffer, nam, thang);
+
+    // ⚠️ Bảo vệ: CHỈ xóa và ghi mới nếu parse được ít nhất 10 records
+    // Tránh xóa mất dữ liệu khi upload nhầm file hoặc file lỗi
+    if (records.length < 10) {
+      return res.status(400).json({
+        error: `File không hợp lệ — chỉ đọc được ${records.length} bản ghi. Vui lòng kiểm tra lại file CHỈ TIÊU SPTT.xlsx.`,
+        count: records.length
+      });
+    }
+
     // Xóa toàn bộ năm đó (vì parse 12 tháng cùng lúc)
     db.chi_tieu = db.chi_tieu.filter(r => !(r.nam === nam && (r.nguon || 'sptt') === nguon));
 
-    const parseFn = nguon === 'ke_hoach' ? parseChiTieuKeHoach : parseChiTieuSPTT;
-    const records = parseFn(req.file.buffer, nam, thang);
     records.forEach(r => { r.id = db.nextId.chi_tieu++; r.nguon = nguon; });
     db.chi_tieu.push(...records);
 
