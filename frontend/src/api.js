@@ -2,7 +2,26 @@ import axios from 'axios';
 
 const api = axios.create({ baseURL: '/api' });
 
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('kpi_token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+api.interceptors.response.use(
+  res => res,
+  err => {
+    if (err.response?.status === 401 && !err.config?.url?.includes('/login')) {
+      localStorage.removeItem('kpi_user');
+      localStorage.removeItem('kpi_token');
+      window.location.reload();
+    }
+    return Promise.reject(err);
+  }
+);
+
 export const login = (username, password) => api.post('/login', { username, password });
+export const logout = () => api.post('/logout');
 export const getUsers = () => api.get('/users');
 export const createUser = (data) => api.post('/users', data);
 export const updateUser = (id, data) => api.put(`/users/${id}`, data);

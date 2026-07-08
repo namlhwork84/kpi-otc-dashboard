@@ -15,7 +15,7 @@ export default function Login() {
     setError('');
     try {
       const res = await apiLogin(form.username, form.password);
-      login(res.data.user);
+      login(res.data.user, res.data.token);
     } catch (err) {
       setError(err.response?.data?.error || 'Lỗi kết nối server');
     } finally {

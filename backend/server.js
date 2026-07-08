@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
+const crypto = require('crypto');
 const { loadDB, saveDB } = require('./db');
 const { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu, parseTienVe } = require('./parser');
 
@@ -20,15 +21,49 @@ app.use(express.json());
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   const db = await loadDB();
-  const user = db.users.find(u => u.username === username && u.password === password);
-  if (!user) return res.status(401).json({ error: 'Sai tài khoản hoặc mật khẩu' });
-  const { password: _, ...safeUser } = user;
-  res.json({ user: safeUser });
+  const idx = db.users.findIndex(u => u.username === username && u.password === password);
+  if (idx === -1) return res.status(401).json({ error: 'Sai tài khoản hoặc mật khẩu' });
+  const token = crypto.randomBytes(24).toString('hex');
+  db.users[idx].token = token;
+  await saveDB(db);
+  const { password: _, token: __, ...safeUser } = db.users[idx];
+  res.json({ user: safeUser, token });
+});
+
+// Mọi API phía dưới đều yêu cầu đăng nhập (trừ /api/login ở trên)
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Chưa đăng nhập' });
+  const db = await loadDB();
+  const user = db.users.find(u => u.token === token);
+  if (!user) return res.status(401).json({ error: 'Phiên đăng nhập không hợp lệ, vui lòng đăng nhập lại' });
+  const { password: _, token: __, ...safeUser } = user;
+  req.user = safeUser;
+  next();
+}
+
+// Chỉ role admin mới được upload / xóa dữ liệu / quản lý tài khoản
+function requireAdmin(req, res, next) {
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Chỉ tài khoản Admin mới được thực hiện thao tác này' });
+  next();
+}
+
+app.use('/api', requireAuth);
+app.use('/api/upload', requireAdmin);
+app.use('/api/data', requireAdmin);
+app.use('/api/users', requireAdmin);
+
+app.post('/api/logout', async (req, res) => {
+  const db = await loadDB();
+  const idx = db.users.findIndex(u => u.id === req.user.id);
+  if (idx !== -1) { db.users[idx].token = null; await saveDB(db); }
+  res.json({ ok: true });
 });
 
 app.get('/api/users', async (req, res) => {
   const db = await loadDB();
-  res.json(db.users.map(({ password: _, ...u }) => u));
+  res.json(db.users.map(({ password: _, token: __, ...u }) => u));
 });
 
 app.post('/api/users', async (req, res) => {
@@ -40,7 +75,7 @@ app.post('/api/users', async (req, res) => {
   const newUser = { id: db.nextId.users++, username, password, role, dsm: dsm || null, full_name };
   db.users.push(newUser);
   await saveDB(db);
-  const { password: _, ...safeUser } = newUser;
+  const { password: _, token: __, ...safeUser } = newUser;
   res.json(safeUser);
 });
 

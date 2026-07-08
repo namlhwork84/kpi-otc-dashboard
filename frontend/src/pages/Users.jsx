@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getUsers, createUser, updateUser, deleteUser } from '../api';
 
-const ROLES = { admin: 'Quản trị', dsm: 'DSM', tdv: 'TDV', ctv: 'CTV' };
+const ROLES = { admin: 'Quản trị', saleadmin: 'Sale Admin (chỉ xem)', dsm: 'DSM', tdv: 'TDV', ctv: 'CTV' };
 
 export default function Users() {
   const [users, setUsers] = useState([]);
