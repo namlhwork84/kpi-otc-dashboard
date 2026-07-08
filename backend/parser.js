@@ -153,17 +153,79 @@ function parseDuLieu(buffer, nam, thang) {
       ten_khach_hang: String(row[col['Tên khách hàng']] || ''),
       ten_hang: String(row[col['Tên hàng']] || ''),
       so_luong_ban: parseFloat(row[col['Số lượng bán']]) || 0,
+      sl_khuyen_mai: parseFloat(row[col['SL bán khuyến mại']]) || 0,
       don_gia: parseFloat(row[col['Đơn giá']]) || 0,
       doanh_so_ban: parseFloat(row[col['Doanh số bán']]) || 0,
       doanh_so_thuc_dat: parseFloat(row[col[dsCol]]) || 0,
       ten_nhan_vien: String(tenNV).trim(),
       ten_don_vi: String(row[col['Tên đơn vị kinh doanh']] || ''),
       tinh_thanh_pho: String(row[col['Tỉnh/Thành phố']] || ''),
-      ten_nhom_kh: String(row[col['Tên nhóm khách hàng']] || '')
+      ten_nhom_kh: String(row[col['Tên nhóm khách hàng']] || row[col['Nhóm quản lý vùng']] || '')
     });
   }
 
   return results;
 }
 
-module.exports = { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu };
+// Parse file Nhật ký chung để lấy "Doanh số tiền về" (tiền thực thu trong tháng)
+// Bút toán thu tiền khách hàng: Nợ TK 111/112 - Có TK 131
+function parseTienVe(buffer, nam, thang) {
+  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+
+  const sheetName =
+    wb.SheetNames.find(s => s.includes('SỔ NHẬT KÝ CHUNG') || s.includes('NHAT KY CHUNG')) ||
+    wb.SheetNames[0];
+
+  const ws = wb.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  let headerRow = -1;
+  for (let i = 0; i < Math.min(10, rows.length); i++) {
+    if (rows[i] && rows[i].some(c => c && String(c).includes('Ngày hạch toán'))) {
+      headerRow = i; break;
+    }
+  }
+  if (headerRow === -1) return [];
+
+  const headers = rows[headerRow].map(h => h ? String(h).trim() : '');
+  const col = {};
+  headers.forEach((h, i) => { col[h] = i; });
+
+  const results = [];
+
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+
+    const ngay = row[col['Ngày hạch toán']];
+    const tk = String(row[col['Tài khoản']] || '');
+    const tkDoiUng = String(row[col['TK đối ứng']] || '');
+    if (!ngay) continue;
+
+    // Chỉ lấy bút toán thu tiền: Nợ 111/112, đối ứng 131
+    const isThuTien = (tk.startsWith('111') || tk.startsWith('112')) && tkDoiUng.startsWith('131');
+    if (!isThuTien) continue;
+
+    let ngayStr = '';
+    if (ngay instanceof Date) ngayStr = ngay.toISOString().split('T')[0];
+    else ngayStr = String(ngay).substring(0, 10);
+
+    const d = new Date(ngayStr);
+    if (isNaN(d)) continue;
+    const namVal = d.getFullYear(), thangVal = d.getMonth() + 1;
+    if (namVal !== nam || thangVal !== thang) continue;
+
+    results.push({
+      nam: namVal,
+      thang: thangVal,
+      ngay_hach_toan: ngayStr,
+      so_chung_tu: String(row[col['Số chứng từ']] || ''),
+      ten_khach_hang: String(row[col['Tên đối tượng']] || ''),
+      so_tien: parseFloat(row[col['Phát sinh Nợ']]) || 0
+    });
+  }
+
+  return results;
+}
+
+module.exports = { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu, parseTienVe };

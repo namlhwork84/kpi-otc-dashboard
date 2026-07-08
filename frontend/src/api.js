@@ -28,9 +28,18 @@ export const uploadDoanhSo = (file, nam, thang) => {
   return api.post('/upload/doanh-so', fd);
 };
 
+export const uploadTienVe = (file, nam, thang) => {
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('nam', nam);
+  fd.append('thang', thang);
+  return api.post('/upload/tien-ve', fd);
+};
+
 export const getUploads = () => api.get('/uploads');
 export const getDataSummary = () => api.get('/data-summary');
 export const deleteThangData = (nam, thang) => api.delete(`/data/doanh-so/${nam}/${thang}`);
+export const deleteTienVeThangData = (nam, thang) => api.delete(`/data/tien-ve/${nam}/${thang}`);
 export const getSummary = (params) => api.get('/dashboard/summary', { params });
 export const getTheoDSM = (params) => api.get('/dashboard/theo-dsm', { params });
 export const getTheoTDV = (params) => api.get('/dashboard/theo-tdv', { params });

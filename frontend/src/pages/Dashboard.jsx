@@ -89,7 +89,7 @@ export default function Dashboard() {
         <>
           {/* KPI Cards */}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-            <KPICard title="Doanh số thực hiện" actual={summary.doanh_so_thuc_hien} target={summary.muc_tieu_ds} icon="💰" />
+            <KPICard title="Doanh số thực hiện" actual={summary.doanh_so_thuc_hien} target={summary.muc_tieu_ds} icon="💰" note={summary.doanh_so_tien_ve != null ? '💵 Tính theo tiền về' : null} />
             <KPICard title="Số đơn hàng" actual={summary.so_don_hang} target={summary.muc_tieu_dh} icon="🧾" />
             <KPICard title="Độ phủ (KH)" actual={summary.so_khach_hang} target={summary.muc_tieu_do_phu} icon="🏪" />
             <KPICard title="SPTT (Solufemo+Bocalso)" actual={summary.sptt_thuc_hien} target={summary.sptt_muc_tieu} icon="⭐" unit=" hộp" />

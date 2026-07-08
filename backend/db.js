@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-const TABLES = ['chi_tieu', 'doanh_so', 'uploads', 'users'];
+const TABLES = ['chi_tieu', 'doanh_so', 'uploads', 'users', 'tien_ve'];
 const PAGE_SIZE = 1000;
 
 // PostgREST giới hạn 1000 dòng/lần select -> phải phân trang lấy hết
@@ -31,18 +31,20 @@ function getDefaultUsers() {
 }
 
 async function loadDB() {
-  const [chiTieu, doanhSo, uploads, users] = await Promise.all(TABLES.map(selectAll));
+  const [chiTieu, doanhSo, uploads, users, tienVe] = await Promise.all(TABLES.map(selectAll));
 
   return {
     chi_tieu: chiTieu,
     doanh_so: doanhSo,
     uploads: uploads,
     users: users.length ? users : getDefaultUsers(),
+    tien_ve: tienVe,
     nextId: {
       chi_tieu: nextIdFrom(chiTieu),
       doanh_so: nextIdFrom(doanhSo),
       uploads: nextIdFrom(uploads),
-      users: nextIdFrom(users)
+      users: nextIdFrom(users),
+      tien_ve: nextIdFrom(tienVe)
     }
   };
 }
@@ -66,7 +68,8 @@ async function saveDB(data) {
     replaceTable('chi_tieu', data.chi_tieu || []),
     replaceTable('doanh_so', data.doanh_so || []),
     replaceTable('uploads', data.uploads || []),
-    replaceTable('users', data.users || getDefaultUsers())
+    replaceTable('users', data.users || getDefaultUsers()),
+    replaceTable('tien_ve', data.tien_ve || [])
   ]);
 }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { uploadChiTieu, uploadDoanhSo, getUploads, getDataSummary, deleteThangData } from '../api';
+import { uploadChiTieu, uploadDoanhSo, uploadTienVe, getUploads, getDataSummary, deleteThangData, deleteTienVeThangData } from '../api';
 
 const MONTHS = ['', 'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5', 'Tháng 6', 'Tháng 7', 'Tháng 8', 'Tháng 9', 'Tháng 10', 'Tháng 11', 'Tháng 12'];
 
@@ -88,6 +88,7 @@ export default function Upload() {
   const [dataSummary, setDataSummary] = useState([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [deletingTV, setDeletingTV] = useState(null);
 
   const reload = () => {
     getUploads().then(r => setUploads(r.data)).catch(() => {});
@@ -118,6 +119,17 @@ export default function Upload() {
     }
   };
 
+  const handleDeleteTienVe = async (nam, thang) => {
+    if (!confirm(`Xóa dữ liệu Doanh số tiền về ${MONTH_NAMES[thang]}/${nam}?`)) return;
+    setDeletingTV(`${nam}-${thang}`);
+    try {
+      await deleteTienVeThangData(nam, thang);
+      reload();
+    } finally {
+      setDeletingTV(null);
+    }
+  };
+
   return (
     <div style={{ padding: '20px 24px' }}>
       <h2 style={{ margin: '0 0 20px', fontSize: 20, fontWeight: 700, color: '#1e3a5f' }}>Quản lý dữ liệu</h2>
@@ -135,10 +147,17 @@ export default function Upload() {
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 28 }}>
         <UploadBox
           title="Sổ Chi Tiết Bán Hàng"
-          desc="Upload file xuất từ phần mềm kế toán — hệ thống tự tính Doanh số, Đơn hàng, Độ phủ, SPTT và so sánh với Mục tiêu KPI"
+          desc="Upload file xuất từ phần mềm kế toán — hệ thống tự tính Đơn hàng, Độ phủ, GTTB đơn, SPTT (tính cả hàng tặng) và so sánh với Mục tiêu KPI"
           onUpload={(f, n, t) => handleUpload(uploadDoanhSo, f, n, t)}
           loading={loading}
           color="#2e7d32"
+        />
+        <UploadBox
+          title="Nhật Ký Chung / Công Nợ"
+          desc="Upload file Nhật ký chung — hệ thống lọc bút toán thu tiền khách hàng để tính KPI Doanh số theo tiền về thực tế trong tháng (chỉ áp dụng ở mức Tổng Kênh)"
+          onUpload={(f, n, t) => handleUpload(uploadTienVe, f, n, t)}
+          loading={loading}
+          color="#01377d"
         />
       </div>
 
@@ -155,7 +174,7 @@ export default function Upload() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr style={{ background: '#f5f7fa' }}>
-                {['Kỳ', 'Số dòng', 'Số đơn hàng', 'Tổng doanh số', ''].map(h => (
+                {['Kỳ', 'Số dòng', 'Số đơn hàng', 'Doanh số bán hàng', 'Doanh số tiền về', ''].map(h => (
                   <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Kỳ' || h === '' ? 'left' : 'right', fontWeight: 600, color: '#555', borderBottom: '2px solid #eee' }}>{h}</th>
                 ))}
               </tr>
@@ -167,14 +186,26 @@ export default function Upload() {
                   <td style={{ padding: '11px 14px', textAlign: 'right', color: '#666' }}>{d.so_dong.toLocaleString('vi-VN')}</td>
                   <td style={{ padding: '11px 14px', textAlign: 'right', color: '#666' }}>{d.so_don_hang.toLocaleString('vi-VN')}</td>
                   <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 600, color: '#2e7d32' }}>{fmtTien(d.doanh_so)}</td>
-                  <td style={{ padding: '11px 14px' }}>
+                  <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 600, color: d.tien_ve != null ? '#01377d' : '#ccc' }}>
+                    {d.tien_ve != null ? fmtTien(d.tien_ve) : '— chưa upload'}
+                  </td>
+                  <td style={{ padding: '11px 14px', whiteSpace: 'nowrap' }}>
                     <button
                       onClick={() => handleDelete(d.nam, d.thang)}
                       disabled={deleting === `${d.nam}-${d.thang}`}
-                      style={{ padding: '6px 14px', background: '#fff0f0', border: '1px solid #ffcdd2', borderRadius: 6, fontSize: 12, color: '#c62828', cursor: 'pointer', fontWeight: 600 }}
+                      style={{ padding: '6px 12px', background: '#fff0f0', border: '1px solid #ffcdd2', borderRadius: 6, fontSize: 12, color: '#c62828', cursor: 'pointer', fontWeight: 600, marginRight: 6 }}
                     >
-                      {deleting === `${d.nam}-${d.thang}` ? 'Đang xóa...' : '🗑 Xóa tháng này'}
+                      {deleting === `${d.nam}-${d.thang}` ? 'Đang xóa...' : '🗑 Xóa bán hàng'}
                     </button>
+                    {d.tien_ve != null && (
+                      <button
+                        onClick={() => handleDeleteTienVe(d.nam, d.thang)}
+                        disabled={deletingTV === `${d.nam}-${d.thang}`}
+                        style={{ padding: '6px 12px', background: '#eef4fb', border: '1px solid #b8d4f0', borderRadius: 6, fontSize: 12, color: '#01377d', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {deletingTV === `${d.nam}-${d.thang}` ? 'Đang xóa...' : '🗑 Xóa tiền về'}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -201,8 +232,12 @@ export default function Upload() {
                 <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
                   <td style={{ padding: '10px 14px' }}>{u.file_name}</td>
                   <td style={{ padding: '10px 14px' }}>
-                    <span style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: u.file_type === 'chi_tieu' ? '#e3f0fb' : '#e8f5e9', color: u.file_type === 'chi_tieu' ? '#2d6a9f' : '#2e7d32' }}>
-                      {u.file_type === 'chi_tieu' ? 'Chỉ tiêu' : 'Doanh số'}
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+                      background: u.file_type === 'chi_tieu' ? '#e3f0fb' : u.file_type === 'tien_ve' ? '#eef4fb' : '#e8f5e9',
+                      color: u.file_type === 'chi_tieu' ? '#2d6a9f' : u.file_type === 'tien_ve' ? '#01377d' : '#2e7d32'
+                    }}>
+                      {u.file_type === 'chi_tieu' ? 'Chỉ tiêu' : u.file_type === 'tien_ve' ? 'Tiền về' : 'Doanh số'}
                     </span>
                   </td>
                   <td style={{ padding: '10px 14px' }}>T{u.thang}/{u.nam}</td>

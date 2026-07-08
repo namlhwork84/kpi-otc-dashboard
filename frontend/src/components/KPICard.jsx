@@ -11,7 +11,7 @@ function pctColor(pct) {
   return '#c62828';
 }
 
-export default function KPICard({ title, actual, target, icon, unit = '' }) {
+export default function KPICard({ title, actual, target, icon, unit = '', note }) {
   const pct = target > 0 ? Math.round((actual / target) * 1000) / 10 : 0;
   const color = pctColor(pct);
   const barWidth = Math.min(pct, 100);
@@ -22,9 +22,10 @@ export default function KPICard({ title, actual, target, icon, unit = '' }) {
         <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5 }}>{title}</span>
         <span style={{ fontSize: 22 }}>{icon}</span>
       </div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: '#1e3a5f', marginBottom: 4 }}>
+      <div style={{ fontSize: 26, fontWeight: 700, color: '#1e3a5f', marginBottom: note ? 0 : 4 }}>
         {fmt(actual)}{unit}
       </div>
+      {note && <div style={{ fontSize: 11, color: '#01377d', fontWeight: 600, marginBottom: 4 }}>{note}</div>}
       <div style={{ fontSize: 12, color: '#999', marginBottom: 10 }}>
         Mục tiêu: <span style={{ color: '#555', fontWeight: 600 }}>{fmt(target)}{unit}</span>
       </div>

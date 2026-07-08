@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../AuthContext';
 import { login as apiLogin } from '../api';
+import Logo from '../components/Logo';
 
 export default function Login() {
   const { login } = useAuth();
@@ -23,11 +24,11 @@ export default function Login() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #1e3a5f 0%, #2d6a9f 100%)' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #01377d 0%, #007f00 100%)' }}>
       <div style={{ background: '#fff', borderRadius: 12, padding: '40px 48px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', minWidth: 360 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#1e3a5f' }}>KPI Dashboard</h1>
+          <Logo width={210} />
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#01377d' }}>KPI Dashboard</h1>
           <p style={{ margin: '4px 0 0', color: '#666', fontSize: 14 }}>Kênh OTC</p>
         </div>
         <form onSubmit={handleSubmit}>
@@ -56,7 +57,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            style={{ width: '100%', padding: '12px', background: '#1e3a5f', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+            style={{ width: '100%', padding: '12px', background: '#01377d', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
           >
             {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>

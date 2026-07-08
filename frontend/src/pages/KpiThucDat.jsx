@@ -147,6 +147,9 @@ export default function KpiThucDat() {
                         <>
                           <td key={c.key+'_th'} style={{ padding:'7px 8px', textAlign:'right', background:bg, color:clr, fontWeight:isTDV?400:600, borderLeft:'1px solid #f0f0f0' }}>
                             {c.fmt(row[c.key])}
+                            {c.key === 'ds' && isTotal && row.doanh_so_tien_ve != null && (
+                              <div style={{ fontSize:9, fontWeight:400, color:'rgba(255,255,255,0.7)' }}>💵 tiền về</div>
+                            )}
                           </td>
                           <td key={c.key+'_mt'} style={{ padding:'7px 8px', textAlign:'right', background:bg, color:isTotal?'rgba(255,255,255,0.6)':'#999', fontSize:11 }}>
                             {c.fmt(row[c.mt])}
@@ -165,6 +168,7 @@ export default function KpiThucDat() {
           {/* Legend */}
           <div style={{ padding:'10px 16px', borderTop:'1px solid #f0f0f0', display:'flex', gap:20, fontSize:11, color:'#888', flexWrap:'wrap' }}>
             <span>🟢 ≥ 100%</span><span>🟡 80-99%</span><span>🔴 &lt; 80%</span>
+            {data[0]?.doanh_so_tien_ve != null && <span>💵 Doanh số Tổng Kênh tính theo tiền về, DSM/TDV vẫn theo doanh số bán hàng</span>}
             <span style={{ marginLeft:'auto' }}>Click vào DSM để thu gọn/mở rộng</span>
           </div>
         </div>

@@ -1,3 +1,31 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: Inter, 'Segoe UI', Arial, sans-serif; background: #f0f3f8; }
+body { font-family: Inter, 'Segoe UI', Arial, sans-serif; background: #f2f6fb; }
 #root { width: 100%; min-height: 100vh; }
+
+.app-sidebar { position: relative; transition: width 0.16s; }
+.sidebar-toggle {
+  position: absolute; top: 10px; right: -13px; z-index: 5;
+  width: 26px; height: 26px; border-radius: 999px;
+  background: #fff; border: 1px solid rgba(1,55,125,0.24);
+  color: #01377d; font-size: 15px; font-weight: 800; line-height: 1;
+  cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+}
+.app-logo-box { max-width: 100%; }
+.app-sidebar.is-collapsed .sidebar-brand,
+.app-sidebar.is-collapsed .sidebar-nav { opacity: 0; pointer-events: none; }
+.app-sidebar.is-collapsed .sidebar-brand { padding-left: 8px !important; padding-right: 8px !important; }
+.app-sidebar.is-collapsed .app-logo-box,
+.app-sidebar.is-collapsed .sidebar-subtitle { display: none; }
+.app-sidebar.is-collapsed { width: 52px !important; }
+
+@media (max-width: 1180px) {
+  .app-sidebar { width: 176px !important; }
+  .app-logo-box { width: 144px !important; padding: 8px !important; }
+  .app-logo-box img { width: 128px !important; }
+  .app-sidebar nav { padding-left: 8px !important; padding-right: 8px !important; }
+}
+@media (max-width: 1024px) {
+  .app-sidebar { width: 156px !important; }
+  .app-logo-box { width: 124px !important; }
+  .app-logo-box img { width: 108px !important; }
+}

@@ -4,7 +4,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const { loadDB, saveDB } = require('./db');
-const { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu } = require('./parser');
+const { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu, parseTienVe } = require('./parser');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -135,6 +135,33 @@ app.post('/api/upload/doanh-so', upload.single('file'), async (req, res) => {
   }
 });
 
+app.post('/api/upload/tien-ve', upload.single('file'), async (req, res) => {
+  try {
+    const db = await loadDB();
+    const nam = parseInt(req.body.nam);
+    const thang = parseInt(req.body.thang);
+
+    const records = parseTienVe(req.file.buffer, nam, thang);
+
+    if (records.length < 3) {
+      return res.status(400).json({ error: `File không hợp lệ — chỉ đọc được ${records.length} bút toán thu tiền cho ${thang}/${nam}. Kiểm tra lại file Nhật ký chung.`, count: records.length });
+    }
+
+    db.tien_ve = db.tien_ve.filter(r => !(r.nam === nam && r.thang === thang));
+    records.forEach(r => { r.id = db.nextId.tien_ve++; });
+    db.tien_ve.push(...records);
+
+    const uploadId = db.nextId.uploads++;
+    db.uploads.push({ id: uploadId, file_name: req.file.originalname, file_type: 'tien_ve', nam, thang, created_at: new Date().toISOString() });
+
+    await saveDB(db);
+    res.json({ ok: true, count: records.length });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/api/uploads', async (req, res) => {
   const db = await loadDB();
   res.json(db.uploads.slice(-20).reverse());
@@ -146,13 +173,19 @@ app.get('/api/data-summary', async (req, res) => {
   const map = {};
   db.doanh_so.forEach(r => {
     const key = `${r.nam}-${r.thang}`;
-    if (!map[key]) map[key] = { nam: r.nam, thang: r.thang, so_dong: 0, doanh_so: 0, so_ct: new Set() };
+    if (!map[key]) map[key] = { nam: r.nam, thang: r.thang, so_dong: 0, doanh_so: 0, so_ct: new Set(), tien_ve: 0, co_tien_ve: false };
     map[key].so_dong++;
     map[key].doanh_so += r.doanh_so_thuc_dat || 0;
     if (r.so_chung_tu) map[key].so_ct.add(r.so_chung_tu);
   });
+  db.tien_ve.forEach(r => {
+    const key = `${r.nam}-${r.thang}`;
+    if (!map[key]) map[key] = { nam: r.nam, thang: r.thang, so_dong: 0, doanh_so: 0, so_ct: new Set(), tien_ve: 0, co_tien_ve: false };
+    map[key].tien_ve += r.so_tien || 0;
+    map[key].co_tien_ve = true;
+  });
   const result = Object.values(map)
-    .map(m => ({ nam: m.nam, thang: m.thang, so_dong: m.so_dong, doanh_so: m.doanh_so, so_don_hang: m.so_ct.size }))
+    .map(m => ({ nam: m.nam, thang: m.thang, so_dong: m.so_dong, doanh_so: m.doanh_so, so_don_hang: m.so_ct.size, tien_ve: m.co_tien_ve ? m.tien_ve : null }))
     .sort((a, b) => b.nam - a.nam || b.thang - a.thang);
   res.json(result);
 });
@@ -167,6 +200,19 @@ app.delete('/api/data/doanh-so/:nam/:thang', async (req, res) => {
   const deleted = before - db.doanh_so.length;
   // Xóa lịch sử upload tương ứng
   db.uploads = db.uploads.filter(u => !(u.file_type === 'doanh_so' && u.nam === nam && u.thang === thang));
+  await saveDB(db);
+  res.json({ ok: true, deleted });
+});
+
+// Xóa dữ liệu tiền về của 1 tháng
+app.delete('/api/data/tien-ve/:nam/:thang', async (req, res) => {
+  const db = await loadDB();
+  const nam = parseInt(req.params.nam);
+  const thang = parseInt(req.params.thang);
+  const before = db.tien_ve.length;
+  db.tien_ve = db.tien_ve.filter(r => !(r.nam === nam && r.thang === thang));
+  const deleted = before - db.tien_ve.length;
+  db.uploads = db.uploads.filter(u => !(u.file_type === 'tien_ve' && u.nam === nam && u.thang === thang));
   await saveDB(db);
   res.json({ ok: true, deleted });
 });
@@ -191,6 +237,8 @@ const DSM_MAP = {
   'Quận Bắc Từ Liêm': 'DSM1',
   // OTC TLS (Nguyễn Việt Cường - PT) thuộc DSM2
   'OTC TLS': 'DSM2',
+  // Cột "Nhóm quản lý vùng" (file chuẩn từ th6.2026 trở đi): OTC1..OTC5, OTC6 = chuỗi
+  'OTC1': 'DSM1', 'OTC2': 'DSM2', 'OTC3': 'DSM3', 'OTC4': 'DSM4', 'OTC5': 'DSM5', 'OTC6': 'CCO-Chuỗi',
 };
 
 function normDSM(nhomKH) {
@@ -241,20 +289,32 @@ function getTargetsForLevel(db, { nam, thang, dsm, tdv }) {
   return map;
 }
 
+// Doanh số tiền về chỉ có ở mức Tổng Kênh (dữ liệu nguồn không tách được theo DSM/TDV)
+function filterTienVe(db, { nam, thang }) {
+  return db.tien_ve.filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4));
+}
+
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
 app.get('/api/dashboard/summary', async (req, res) => {
   const db = await loadDB();
   const dsRows = filterDS(db, req.query);
   const targets = getTargetsForLevel(db, req.query);
 
-  const tongDS = dsRows.reduce((s, r) => s + (r.doanh_so_thuc_dat || 0), 0);
+  const tongDSBanHang = dsRows.reduce((s, r) => s + (r.doanh_so_thuc_dat || 0), 0);
   const soDH = new Set(dsRows.map(r => r.so_chung_tu).filter(Boolean)).size;
   const soKH = new Set(dsRows.map(r => r.ten_khach_hang).filter(Boolean)).size;
-  // SPTT thực hiện = tổng số lượng bán của sản phẩm trọng tâm
-  const spttThucHien = dsRows.filter(r => isSptt(r.ten_hang)).reduce((s, r) => s + (r.so_luong_ban || 0), 0);
+  // SPTT thực hiện = tổng số lượng bán của sản phẩm trọng tâm (tính cả hàng khuyến mại/tặng)
+  const spttThucHien = dsRows.filter(r => isSptt(r.ten_hang)).reduce((s, r) => s + (r.so_luong_ban || 0) + (r.sl_khuyen_mai || 0), 0);
+
+  // Doanh số tiền về: chỉ áp dụng ở mức Tổng Kênh (không lọc theo DSM/TDV)
+  const tienVeRows = (!req.query.dsm && !req.query.tdv) ? filterTienVe(db, req.query) : [];
+  const tongTienVe = tienVeRows.reduce((s, r) => s + (r.so_tien || 0), 0);
+  const tongDS = tienVeRows.length ? tongTienVe : tongDSBanHang;
 
   res.json({
     doanh_so_thuc_hien: tongDS,
+    doanh_so_ban_hang: tongDSBanHang,
+    doanh_so_tien_ve: tienVeRows.length ? tongTienVe : null,
     muc_tieu_ds: targets['Doanh số'] || 0,
     so_don_hang: soDH,
     muc_tieu_dh: targets['Số lượng đơn hàng'] || 0,
@@ -320,7 +380,7 @@ app.get('/api/dashboard/theo-tdv', async (req, res) => {
       tdvMap[key].ds += r.doanh_so_thuc_dat || 0;
       if (r.so_chung_tu) tdvMap[key].dh.add(r.so_chung_tu);
       if (r.ten_khach_hang) tdvMap[key].kh.add(r.ten_khach_hang);
-      if (isSptt(r.ten_hang)) tdvMap[key].sptt += r.so_luong_ban || 0;
+      if (isSptt(r.ten_hang)) tdvMap[key].sptt += (r.so_luong_ban || 0) + (r.sl_khuyen_mai || 0);
     });
 
   const ctMap = {};
@@ -547,7 +607,7 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
     d.ds += r.doanh_so_thuc_dat || 0;
     if (r.so_chung_tu) d.dh.add(r.so_chung_tu);
     if (r.ten_khach_hang) d.kh.add(r.ten_khach_hang);
-    if (isSptt(r.ten_hang)) d.sptt += r.so_luong_ban || 0;
+    if (isSptt(r.ten_hang)) d.sptt += (r.so_luong_ban || 0) + (r.sl_khuyen_mai || 0);
   }
 
   // Lấy targets từ chi_tieu
@@ -644,14 +704,20 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
   const tkGTTB = tkDH > 0 ? Math.round(tongKenhDS / tkDH) : 0;
   const tkTarget = ctMap['TỔNG KÊNH'] || {};
 
+  // Doanh số tiền về: chỉ có ở mức Tổng Kênh, dùng làm KPI Doanh số chính khi có dữ liệu
+  const tienVeRows = db.tien_ve.filter(r => r.nam === namInt && r.thang === thangInt);
+  const tongTienVe = tienVeRows.reduce((s, r) => s + (r.so_tien || 0), 0);
+  const dsKPI = tienVeRows.length ? tongTienVe : tongKenhDS;
+
   result.unshift({
     level: 'total', name: 'TỔNG KÊNH OTC',
-    ds: tongKenhDS, dh: tkDH, kh: tkKH, sptt: tongKenhSPTT, gttb: tkGTTB,
+    ds: dsKPI, doanh_so_ban_hang: tongKenhDS, doanh_so_tien_ve: tienVeRows.length ? tongTienVe : null,
+    dh: tkDH, kh: tkKH, sptt: tongKenhSPTT, gttb: tkGTTB,
     mt_ds: tkTarget['Doanh số'] || 0, mt_dh: tkTarget['Số lượng đơn hàng'] || 0,
     mt_kh: tkTarget['Số lượng độ phủ TB/THÁNG'] || 0,
     mt_sptt: tkTarget['Sản phẩm trọng tâm'] || 0,
     mt_gttb: tkTarget['Giá trị trung bình đơn hàng'] || 0,
-    pct_ds: pct(tongKenhDS, tkTarget['Doanh số']),
+    pct_ds: pct(dsKPI, tkTarget['Doanh số']),
     pct_dh: pct(tkDH, tkTarget['Số lượng đơn hàng']),
     pct_kh: pct(tkKH, tkTarget['Số lượng độ phủ TB/THÁNG']),
     pct_sptt: pct(tongKenhSPTT, tkTarget['Sản phẩm trọng tâm']),
