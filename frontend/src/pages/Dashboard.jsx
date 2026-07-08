@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { getSummary, getTheoDSM, getTheoTDV, getTrendTuan } from '../api';
 import FilterBar from '../components/FilterBar';
 import KPICard from '../components/KPICard';
+import useLatestPeriod from '../useLatestPeriod';
 
 function fmt(n) {
   if (!n) return '0';
@@ -20,7 +21,14 @@ function pctColor(p) {
 }
 
 export default function Dashboard() {
-  const [filters, setFilters] = useState({ nam: 2026, thang: 4, quy: null, tuan: null, dsm: null, tdv: null });
+  const latestPeriod = useLatestPeriod();
+  const [filters, setFilters] = useState({ nam: null, thang: null, quy: null, tuan: null, dsm: null, tdv: null });
+
+  useEffect(() => {
+    if (latestPeriod && !filters.nam) {
+      setFilters(f => ({ ...f, nam: latestPeriod.nam, thang: latestPeriod.thang }));
+    }
+  }, [latestPeriod]);
   const [summary, setSummary] = useState(null);
   const [dsmData, setDsmData] = useState([]);
   const [tdvData, setTdvData] = useState([]);
@@ -74,14 +82,14 @@ export default function Dashboard() {
 
       <FilterBar filters={filters} onChange={mergeFilters} />
 
-      {!summary && !loading && (
+      {!summary && !loading && filters.nam && (
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#999' }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📂</div>
           <div style={{ fontSize: 16 }}>Chưa có dữ liệu. Vui lòng upload file Excel ở trang Quản lý dữ liệu.</div>
         </div>
       )}
 
-      {loading && (
+      {(loading || !filters.nam) && (
         <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>Đang tải...</div>
       )}
 
@@ -90,9 +98,9 @@ export default function Dashboard() {
           {/* KPI Cards */}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
             <KPICard title="Doanh số thực hiện" actual={summary.doanh_so_thuc_hien} target={summary.muc_tieu_ds} icon="💰" note={summary.doanh_so_tien_ve != null ? '💵 Tính theo tiền về' : null} />
-            <KPICard title="Số đơn hàng" actual={summary.so_don_hang} target={summary.muc_tieu_dh} icon="🧾" />
-            <KPICard title="Độ phủ (KH)" actual={summary.so_khach_hang} target={summary.muc_tieu_do_phu} icon="🏪" />
-            <KPICard title="SPTT (Solufemo+Bocalso)" actual={summary.sptt_thuc_hien} target={summary.sptt_muc_tieu} icon="⭐" unit=" hộp" />
+            <KPICard title="Số đơn hàng" actual={summary.so_don_hang} target={summary.muc_tieu_dh} icon="🧾" type="count" />
+            <KPICard title="Độ phủ (KH)" actual={summary.so_khach_hang} target={summary.muc_tieu_do_phu} icon="🏪" type="count" />
+            <KPICard title="SPTT (Solufemo+Bocalso)" actual={summary.sptt_thuc_hien} target={summary.sptt_muc_tieu} icon="⭐" unit=" hộp" type="count" />
           </div>
 
           {/* Trend theo tuần */}

@@ -1,4 +1,5 @@
-function fmt(n) {
+function fmt(n, type) {
+  if (type === 'count') return Math.round(n || 0).toLocaleString('vi-VN');
   if (n >= 1e9) return (n / 1e9).toFixed(2) + ' tỷ';
   if (n >= 1e6) return (n / 1e6).toFixed(1) + ' tr';
   if (n >= 1e3) return (n / 1e3).toFixed(0) + ' k';
@@ -11,7 +12,7 @@ function pctColor(pct) {
   return '#c62828';
 }
 
-export default function KPICard({ title, actual, target, icon, unit = '', note }) {
+export default function KPICard({ title, actual, target, icon, unit = '', note, type }) {
   const pct = target > 0 ? Math.round((actual / target) * 1000) / 10 : 0;
   const color = pctColor(pct);
   const barWidth = Math.min(pct, 100);
@@ -23,11 +24,11 @@ export default function KPICard({ title, actual, target, icon, unit = '', note }
         <span style={{ fontSize: 22 }}>{icon}</span>
       </div>
       <div style={{ fontSize: 26, fontWeight: 700, color: '#1e3a5f', marginBottom: note ? 0 : 4 }}>
-        {fmt(actual)}{unit}
+        {fmt(actual, type)}{unit}
       </div>
       {note && <div style={{ fontSize: 11, color: '#01377d', fontWeight: 600, marginBottom: 4 }}>{note}</div>}
       <div style={{ fontSize: 12, color: '#999', marginBottom: 10 }}>
-        Mục tiêu: <span style={{ color: '#555', fontWeight: 600 }}>{fmt(target)}{unit}</span>
+        Mục tiêu: <span style={{ color: '#555', fontWeight: 600 }}>{fmt(target, type)}{unit}</span>
       </div>
       <div style={{ background: '#f0f0f0', borderRadius: 4, height: 6, overflow: 'hidden', marginBottom: 6 }}>
         <div style={{ width: `${barWidth}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.5s ease' }} />

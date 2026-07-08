@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getKpiThucDat } from '../api';
+import useLatestPeriod from '../useLatestPeriod';
 
 const MONTHS = ['','Tháng 1','Tháng 2','Tháng 3','Tháng 4','Tháng 5','Tháng 6','Tháng 7','Tháng 8','Tháng 9','Tháng 10','Tháng 11','Tháng 12'];
 
@@ -39,14 +40,23 @@ const DSM_COLORS = {
 };
 
 export default function KpiThucDat() {
-  const [nam, setNam] = useState(2026);
-  const [thang, setThang] = useState(4);
+  const latestPeriod = useLatestPeriod();
+  const [nam, setNam] = useState(null);
+  const [thang, setThang] = useState(null);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState({});
 
   useEffect(() => {
+    if (latestPeriod && !nam) {
+      setNam(latestPeriod.nam);
+      setThang(latestPeriod.thang);
+    }
+  }, [latestPeriod]);
+
+  useEffect(() => {
+    if (!nam || !thang) return;
     setLoading(true);
     getKpiThucDat({ nam, thang })
       .then(r => setData(r.data))
@@ -82,9 +92,9 @@ export default function KpiThucDat() {
         </div>
       </div>
 
-      {loading && <div style={{ textAlign:'center', padding:60, color:'#888' }}>Đang tải...</div>}
+      {(loading || !nam) && <div style={{ textAlign:'center', padding:60, color:'#888' }}>Đang tải...</div>}
 
-      {!loading && data.length === 0 && (
+      {!loading && nam && data.length === 0 && (
         <div style={{ textAlign:'center', padding:'60px 20px', color:'#999' }}>
           <div style={{ fontSize:48, marginBottom:16 }}>📊</div>
           <div>Chưa có dữ liệu thực hiện. Vui lòng upload file Sổ Chi Tiết Bán Hàng.</div>
