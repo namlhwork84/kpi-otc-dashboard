@@ -1,0 +1,9 @@
+{
+  "experimentalServices": {
+    "backend": {
+      "entrypoint": "backend/server.js",
+      "framework": "express",
+      "routePrefix": "/"
+    }
+  }
+}
