@@ -1,9 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const { loadDB, saveDB } = require('./db');
-const { parseChiTieuSPTT, parseDuLieu } = require('./parser');
+const { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu } = require('./parser');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -16,35 +17,35 @@ app.use(express.static(DIST));
 app.use(express.json());
 
 // ─── AUTH ────────────────────────────────────────────────────────────────────
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
-  const db = loadDB();
+  const db = await loadDB();
   const user = db.users.find(u => u.username === username && u.password === password);
   if (!user) return res.status(401).json({ error: 'Sai tài khoản hoặc mật khẩu' });
   const { password: _, ...safeUser } = user;
   res.json({ user: safeUser });
 });
 
-app.get('/api/users', (req, res) => {
-  const db = loadDB();
+app.get('/api/users', async (req, res) => {
+  const db = await loadDB();
   res.json(db.users.map(({ password: _, ...u }) => u));
 });
 
-app.post('/api/users', (req, res) => {
-  const db = loadDB();
+app.post('/api/users', async (req, res) => {
+  const db = await loadDB();
   const { username, password, role, dsm, full_name } = req.body;
   if (db.users.find(u => u.username === username)) {
     return res.status(400).json({ error: 'Username đã tồn tại' });
   }
   const newUser = { id: db.nextId.users++, username, password, role, dsm: dsm || null, full_name };
   db.users.push(newUser);
-  saveDB(db);
+  await saveDB(db);
   const { password: _, ...safeUser } = newUser;
   res.json(safeUser);
 });
 
-app.put('/api/users/:id', (req, res) => {
-  const db = loadDB();
+app.put('/api/users/:id', async (req, res) => {
+  const db = await loadDB();
   const id = parseInt(req.params.id);
   const idx = db.users.findIndex(u => u.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Không tìm thấy user' });
@@ -53,22 +54,22 @@ app.put('/api/users/:id', (req, res) => {
   if (role) db.users[idx].role = role;
   if (dsm !== undefined) db.users[idx].dsm = dsm;
   if (full_name) db.users[idx].full_name = full_name;
-  saveDB(db);
+  await saveDB(db);
   res.json({ ok: true });
 });
 
-app.delete('/api/users/:id', (req, res) => {
-  const db = loadDB();
+app.delete('/api/users/:id', async (req, res) => {
+  const db = await loadDB();
   const id = parseInt(req.params.id);
   db.users = db.users.filter(u => u.id !== id || u.username === 'admin');
-  saveDB(db);
+  await saveDB(db);
   res.json({ ok: true });
 });
 
 // ─── UPLOAD ──────────────────────────────────────────────────────────────────
-app.post('/api/upload/chi-tieu', upload.single('file'), (req, res) => {
+app.post('/api/upload/chi-tieu', upload.single('file'), async (req, res) => {
   try {
-    const db = loadDB();
+    const db = await loadDB();
     const nam = parseInt(req.body.nam);
     const thang = parseInt(req.body.thang);
     const nguon = req.body.nguon || 'sptt';
@@ -94,7 +95,7 @@ app.post('/api/upload/chi-tieu', upload.single('file'), (req, res) => {
     const uploadId = db.nextId.uploads++;
     db.uploads.push({ id: uploadId, file_name: req.file.originalname, file_type: 'chi_tieu', nam, thang: 0, created_at: new Date().toISOString() });
 
-    saveDB(db);
+    await saveDB(db);
     res.json({ ok: true, count: records.length });
   } catch (e) {
     console.error(e);
@@ -102,9 +103,9 @@ app.post('/api/upload/chi-tieu', upload.single('file'), (req, res) => {
   }
 });
 
-app.post('/api/upload/doanh-so', upload.single('file'), (req, res) => {
+app.post('/api/upload/doanh-so', upload.single('file'), async (req, res) => {
   try {
-    const db = loadDB();
+    const db = await loadDB();
     const nam = parseInt(req.body.nam);
     const thang = parseInt(req.body.thang);
 
@@ -126,7 +127,7 @@ app.post('/api/upload/doanh-so', upload.single('file'), (req, res) => {
     const uploadId = db.nextId.uploads++;
     db.uploads.push({ id: uploadId, file_name: req.file.originalname, file_type: 'doanh_so', nam, thang, created_at: new Date().toISOString() });
 
-    saveDB(db);
+    await saveDB(db);
     res.json({ ok: true, count: records.length });
   } catch (e) {
     console.error(e);
@@ -134,14 +135,14 @@ app.post('/api/upload/doanh-so', upload.single('file'), (req, res) => {
   }
 });
 
-app.get('/api/uploads', (req, res) => {
-  const db = loadDB();
+app.get('/api/uploads', async (req, res) => {
+  const db = await loadDB();
   res.json(db.uploads.slice(-20).reverse());
 });
 
 // Thống kê dữ liệu doanh số theo từng tháng
-app.get('/api/data-summary', (req, res) => {
-  const db = loadDB();
+app.get('/api/data-summary', async (req, res) => {
+  const db = await loadDB();
   const map = {};
   db.doanh_so.forEach(r => {
     const key = `${r.nam}-${r.thang}`;
@@ -157,8 +158,8 @@ app.get('/api/data-summary', (req, res) => {
 });
 
 // Xóa dữ liệu doanh số của 1 tháng
-app.delete('/api/data/doanh-so/:nam/:thang', (req, res) => {
-  const db = loadDB();
+app.delete('/api/data/doanh-so/:nam/:thang', async (req, res) => {
+  const db = await loadDB();
   const nam = parseInt(req.params.nam);
   const thang = parseInt(req.params.thang);
   const before = db.doanh_so.length;
@@ -166,7 +167,7 @@ app.delete('/api/data/doanh-so/:nam/:thang', (req, res) => {
   const deleted = before - db.doanh_so.length;
   // Xóa lịch sử upload tương ứng
   db.uploads = db.uploads.filter(u => !(u.file_type === 'doanh_so' && u.nam === nam && u.thang === thang));
-  saveDB(db);
+  await saveDB(db);
   res.json({ ok: true, deleted });
 });
 
@@ -241,8 +242,8 @@ function getTargetsForLevel(db, { nam, thang, dsm, tdv }) {
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
-app.get('/api/dashboard/summary', (req, res) => {
-  const db = loadDB();
+app.get('/api/dashboard/summary', async (req, res) => {
+  const db = await loadDB();
   const dsRows = filterDS(db, req.query);
   const targets = getTargetsForLevel(db, req.query);
 
@@ -264,8 +265,8 @@ app.get('/api/dashboard/summary', (req, res) => {
   });
 });
 
-app.get('/api/dashboard/theo-dsm', (req, res) => {
-  const db = loadDB();
+app.get('/api/dashboard/theo-dsm', async (req, res) => {
+  const db = await loadDB();
   const { nam, thang } = req.query;
 
   // Group actual by DSM (ten_nhom_kh)
@@ -306,8 +307,8 @@ app.get('/api/dashboard/theo-dsm', (req, res) => {
   res.json(result);
 });
 
-app.get('/api/dashboard/theo-tdv', (req, res) => {
-  const db = loadDB();
+app.get('/api/dashboard/theo-tdv', async (req, res) => {
+  const db = await loadDB();
   const { nam, thang, dsm } = req.query;
 
   const tdvMap = {};
@@ -351,8 +352,8 @@ app.get('/api/dashboard/theo-tdv', (req, res) => {
   res.json(result);
 });
 
-app.get('/api/dashboard/trend-tuan', (req, res) => {
-  const db = loadDB();
+app.get('/api/dashboard/trend-tuan', async (req, res) => {
+  const db = await loadDB();
   const rows = filterDS(db, req.query);
 
   const weeks = {};
@@ -378,8 +379,8 @@ app.get('/api/dashboard/trend-tuan', (req, res) => {
 });
 
 // Metadata for filters
-app.get('/api/metadata/nam-thang', (req, res) => {
-  const db = loadDB();
+app.get('/api/metadata/nam-thang', async (req, res) => {
+  const db = await loadDB();
   const periods = [...new Set(db.doanh_so.map(r => `${r.nam}-${r.thang}`))].sort().map(s => {
     const [nam, thang] = s.split('-');
     return { nam: parseInt(nam), thang: parseInt(thang) };
@@ -387,8 +388,8 @@ app.get('/api/metadata/nam-thang', (req, res) => {
   res.json(periods);
 });
 
-app.get('/api/metadata/dsm', (req, res) => {
-  const db = loadDB();
+app.get('/api/metadata/dsm', async (req, res) => {
+  const db = await loadDB();
   const { nam, thang } = req.query;
   const dsms = [...new Set(
     db.doanh_so
@@ -398,8 +399,8 @@ app.get('/api/metadata/dsm', (req, res) => {
   res.json(dsms);
 });
 
-app.get('/api/metadata/tdv', (req, res) => {
-  const db = loadDB();
+app.get('/api/metadata/tdv', async (req, res) => {
+  const db = await loadDB();
   const { nam, thang, dsm } = req.query;
   const tdvs = [...new Set(
     db.doanh_so
@@ -410,8 +411,8 @@ app.get('/api/metadata/tdv', (req, res) => {
 });
 
 // Chi tiết giao dịch
-app.get('/api/giao-dich', (req, res) => {
-  const db = loadDB();
+app.get('/api/giao-dich', async (req, res) => {
+  const db = await loadDB();
   const { page = 1, limit = 50 } = req.query;
   let rows = filterDS(db, req.query);
   rows.sort((a, b) => (b.ngay_hach_toan || '').localeCompare(a.ngay_hach_toan || ''));
@@ -421,8 +422,8 @@ app.get('/api/giao-dich', (req, res) => {
 });
 
 // ─── TRANG MỤC TIÊU: pivot table ─────────────────────────────────────────────
-app.get('/api/muc-tieu', (req, res) => {
-  const db = loadDB();
+app.get('/api/muc-tieu', async (req, res) => {
+  const db = await loadDB();
   const { nam, thang } = req.query;
   const namInt = parseInt(nam || 2026);
   const thangInt = parseInt(thang || 4); // 0 = cả năm
@@ -523,8 +524,8 @@ function normTDVName(bcbhName) {
   return TMAP.tdv_name_to_chitieu[n] || n;
 }
 
-app.get('/api/kpi-thuc-dat', (req, res) => {
-  const db = loadDB();
+app.get('/api/kpi-thuc-dat', async (req, res) => {
+  const db = await loadDB();
   const { nam, thang } = req.query;
   const namInt = parseInt(nam || 2026);
   const thangInt = parseInt(thang || 4);
@@ -661,7 +662,7 @@ app.get('/api/kpi-thuc-dat', (req, res) => {
 });
 
 // Mọi route không phải /api → trả về React app
-app.get('*', (req, res) => {
+app.get('*', async (req, res) => {
   res.sendFile(path.join(DIST, 'index.html'));
 });
 

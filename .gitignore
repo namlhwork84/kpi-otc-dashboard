@@ -21,3 +21,8 @@ make_handoff.py
 
 # Claude local config
 .claude/settings.local.json
+
+# Secrets
+.env
+backend/.env
+.vercel
