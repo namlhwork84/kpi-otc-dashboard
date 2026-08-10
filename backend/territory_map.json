@@ -78,6 +78,8 @@
     "Trần Văn Huyên":             "DSM1",
     "Trần Văn Nam":               "DSM1",
     "Trần Thị Lan":               "DSM1",
+    "Hà Minh Chiến":              "DSM1",
+    "Hoàng Thái Sơn":             "DSM1",
     "Lữ Duy Tuyên - HB":         "DSM2",
     "Nguyễn Trung Hảo - ĐB":    "DSM2",
     "Lã Thanh Thủy - SL":        "DSM2",
@@ -96,6 +98,8 @@
     "Phạm văn Đoàn - HY":        "DSM3",
     "Nguyễn Sơn Tùng - NĐ":     "DSM3",
     "Trần Hùng - Hanam":         "DSM3",
+    "Lương Văn Điền":             "DSM3",
+    "Nguyễn Văn Chiến":          "DSM3",
     "Trần Sinh":                  "OTC4",
     "Nguyễn Thành Tạo - HD":    "OTC4",
     "Trần Thị Mai - TB":          "OTC4",
@@ -126,6 +130,8 @@
     "Lê Thành Nhân - QTr":      "DSM5",
     "Lê Đình Dưỡng":             "DSM5",
     "Trần Văn Hào - TH":        "DSM5",
+    "Phạm Chinh":                 "DSM5",
+    "Phạm Thị Huyền":             "DSM5",
     "FPT Long Châu":             "CCO",
     "Pharmacity":                "CCO"
   },
@@ -141,7 +147,14 @@
     "Nguyễn Thị Hường":          "Nguyễn Thị Hường - Nan",
     "Nguyễn Thị Hải Yến":       "Nguyễn Thị Hải Yến - QB",
     "Lê Thành Nhân":             "Lê Thành Nhân - QTr",
-    "Hồ Khánh Dinh (Tiệp)":     "CTV Hà Tĩnh\nCTV HỒ KHÁNH DINH"
+    "Hồ Khánh Dinh (Tiệp)":     "CTV Hà Tĩnh\nCTV HỒ KHÁNH DINH",
+
+    "Hà Minh Chiến":              "Nguyễn Duy Thiệu",
+    "Hoàng Thái Sơn":             "Vũ Viết Tân - HN2",
+    "Lương Văn Điền":             "Phong Điền - BG",
+    "Nguyễn Văn Chiến":          "Phạm Trung - QN",
+    "Phạm Chinh":                 "CTV Hà Tĩnh\nCTV HỒ KHÁNH DINH",
+    "Phạm Thị Huyền":             "CTV Thanh Hóa 2\nCTV HÀ THỊ UYÊN"
   },
 
   "dsm_order": ["DSM1","DSM2","DSM3","OTC4","DSM5","CCO"]

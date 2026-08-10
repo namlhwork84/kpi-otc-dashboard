@@ -4,6 +4,7 @@ const cors = require('cors');
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
+const XLSX = require('xlsx');
 const { loadDB, saveDB } = require('./db');
 const { parseChiTieuSPTT, parseChiTieuKeHoach, parseDuLieu, parseTienVe } = require('./parser');
 
@@ -61,9 +62,11 @@ app.post('/api/logout', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Endpoint này chỉ admin gọi được (requireAdmin ở trên) — trả cả password để admin xem/đối chiếu.
+// Không trả "token" vì đó là phiên đăng nhập đang hoạt động, lộ ra có thể bị chiếm phiên người khác.
 app.get('/api/users', async (req, res) => {
   const db = await loadDB();
-  res.json(db.users.map(({ password: _, token: __, ...u }) => u));
+  res.json(db.users.map(({ token: __, ...u }) => u));
 });
 
 app.post('/api/users', async (req, res) => {
@@ -206,21 +209,42 @@ app.get('/api/uploads', async (req, res) => {
 app.get('/api/data-summary', async (req, res) => {
   const db = await loadDB();
   const map = {};
+  const getEntry = (nam, thang) => {
+    const key = `${nam}-${thang}`;
+    if (!map[key]) map[key] = { nam, thang, so_dong: 0, doanh_so: 0, so_ct: new Set(), tien_ve: 0, co_tien_ve: false };
+    return map[key];
+  };
+
   db.doanh_so.forEach(r => {
-    const key = `${r.nam}-${r.thang}`;
-    if (!map[key]) map[key] = { nam: r.nam, thang: r.thang, so_dong: 0, doanh_so: 0, so_ct: new Set(), tien_ve: 0, co_tien_ve: false };
-    map[key].so_dong++;
-    map[key].doanh_so += r.doanh_so_thuc_dat || 0;
-    if (r.so_chung_tu) map[key].so_ct.add(r.so_chung_tu);
+    const e = getEntry(r.nam, r.thang);
+    e.so_dong++;
+    e.doanh_so += r.doanh_so_thuc_dat || 0;
+    if (r.so_chung_tu) e.so_ct.add(r.so_chung_tu);
   });
+
+  // Gộp tiền về vào đúng kỳ THỰC THU (có thể khác kỳ phát sinh bán hàng) — chuẩn mới, ưu tiên trước
+  db.doanh_so.forEach(r => {
+    if (r.da_thu_tien !== true) return;
+    const e = getEntry(r.nam_thu_tien, r.thang_thu_tien);
+    e.tien_ve += r.doanh_so_thuc_dat || 0;
+    e.co_tien_ve = true;
+    e.co_tien_ve_moi = true;
+  });
+  // Bảng cũ (Nhật ký chung): chỉ dùng bù cho những KỲ chưa có dữ liệu chuẩn mới, tránh cộng trùng
   db.tien_ve.forEach(r => {
-    const key = `${r.nam}-${r.thang}`;
-    if (!map[key]) map[key] = { nam: r.nam, thang: r.thang, so_dong: 0, doanh_so: 0, so_ct: new Set(), tien_ve: 0, co_tien_ve: false };
-    map[key].tien_ve += r.so_tien || 0;
-    map[key].co_tien_ve = true;
+    const e = getEntry(r.nam, r.thang);
+    if (e.co_tien_ve_moi) return;
+    e.tien_ve += r.so_tien || 0;
+    e.co_tien_ve = true;
   });
+
   const result = Object.values(map)
-    .map(m => ({ nam: m.nam, thang: m.thang, so_dong: m.so_dong, doanh_so: m.doanh_so, so_don_hang: m.so_ct.size, tien_ve: m.co_tien_ve ? m.tien_ve : null }))
+    .map(m => ({
+      nam: m.nam, thang: m.thang, so_dong: m.so_dong, doanh_so: m.doanh_so, so_don_hang: m.so_ct.size,
+      tien_ve: m.co_tien_ve ? m.tien_ve : null,
+      // Nút "Xóa tiền về" (bảng cũ) chỉ hiện khi kỳ đó còn đang dùng dữ liệu Nhật ký chung, chưa có chuẩn mới
+      tien_ve_legacy: !m.co_tien_ve_moi && db.tien_ve.some(r => r.nam === m.nam && r.thang === m.thang)
+    }))
     .sort((a, b) => b.nam - a.nam || b.thang - a.thang);
   res.json(result);
 });
@@ -324,9 +348,31 @@ function getTargetsForLevel(db, { nam, thang, dsm, tdv }) {
   return map;
 }
 
-// Doanh số tiền về chỉ có ở mức Tổng Kênh (dữ liệu nguồn không tách được theo DSM/TDV)
+// Doanh số tiền về (nguồn cũ — Sổ Nhật ký chung): chỉ có ở mức Tổng Kênh, không tách được theo DSM/TDV.
+// Chỉ còn dùng làm fallback cho các kỳ upload trước khi Sổ chi tiết bán hàng có cột "Tình trạng thu tiền".
 function filterTienVe(db, { nam, thang }) {
   return db.tien_ve.filter(r => r.nam === parseInt(nam || 2026) && r.thang === parseInt(thang || 4));
+}
+
+// Chuẩn mới: cột "Tình trạng thu tiền" trong Sổ chi tiết bán hàng cho biết trực tiếp từng dòng bán hàng
+// đã được thu tiền vào tháng nào — nhờ vậy tính được Doanh số tiền về theo TỪNG TDV/DSM (không chỉ Tổng Kênh),
+// và gộp đúng công nợ phát sinh tháng trước nhưng thu tiền ở tháng sau vào KPI của TDV ở tháng thu tiền.
+// Luôn kiểm tra theo TỪNG KỲ (không phải toàn cục) — vì có thể kỳ này đã upload theo chuẩn mới nhưng
+// kỳ khác vẫn chỉ có dữ liệu tiền về từ bảng cũ (Nhật ký chung), cần fallback riêng cho từng kỳ đó.
+function hasNewThuTienForPeriod(db, namInt, thangInt) {
+  return db.doanh_so.some(r => r.da_thu_tien === true && r.nam_thu_tien === namInt && r.thang_thu_tien === thangInt);
+}
+
+function filterTienVeV2(db, { nam, thang, dsm, tdv }) {
+  const namInt = parseInt(nam || 2026);
+  const thangInt = parseInt(thang || 4);
+  return db.doanh_so.filter(r =>
+    r.da_thu_tien === true &&
+    r.nam_thu_tien === namInt &&
+    r.thang_thu_tien === thangInt &&
+    (!tdv || r.ten_nhan_vien === tdv) &&
+    (!dsm || normDSM(r.ten_nhom_kh) === dsm)
+  );
 }
 
 // ─── DASHBOARD ───────────────────────────────────────────────────────────────
@@ -341,15 +387,25 @@ app.get('/api/dashboard/summary', async (req, res) => {
   // SPTT thực hiện = tổng số lượng bán của sản phẩm trọng tâm (tính cả hàng khuyến mại/tặng)
   const spttThucHien = dsRows.filter(r => isSptt(r.ten_hang)).reduce((s, r) => s + (r.so_luong_ban || 0) + (r.sl_khuyen_mai || 0), 0);
 
-  // Doanh số tiền về: chỉ áp dụng ở mức Tổng Kênh (không lọc theo DSM/TDV)
-  const tienVeRows = (!req.query.dsm && !req.query.tdv) ? filterTienVe(db, req.query) : [];
-  const tongTienVe = tienVeRows.reduce((s, r) => s + (r.so_tien || 0), 0);
-  const tongDS = tienVeRows.length ? tongTienVe : tongDSBanHang;
+  // Doanh số tiền về: ưu tiên chuẩn mới (cột "Tình trạng thu tiền" trong Sổ chi tiết bán hàng) —
+  // tách được theo DSM/TDV. Chỉ dùng bảng tien_ve cũ (Tổng Kênh only) khi chưa có dữ liệu chuẩn mới.
+  let tongTienVe = 0, coTienVe = false;
+  const namQ = parseInt(req.query.nam || 2026), thangQ = parseInt(req.query.thang || 4);
+  if (hasNewThuTienForPeriod(db, namQ, thangQ)) {
+    const rowsV2 = filterTienVeV2(db, req.query);
+    tongTienVe = rowsV2.reduce((s, r) => s + (r.doanh_so_thuc_dat || 0), 0);
+    coTienVe = true;
+  } else if (!req.query.dsm && !req.query.tdv) {
+    const tienVeRows = filterTienVe(db, req.query);
+    tongTienVe = tienVeRows.reduce((s, r) => s + (r.so_tien || 0), 0);
+    coTienVe = tienVeRows.length > 0;
+  }
+  const tongDS = coTienVe ? tongTienVe : tongDSBanHang;
 
   res.json({
     doanh_so_thuc_hien: tongDS,
     doanh_so_ban_hang: tongDSBanHang,
-    doanh_so_tien_ve: tienVeRows.length ? tongTienVe : null,
+    doanh_so_tien_ve: coTienVe ? tongTienVe : null,
     muc_tieu_ds: targets['Doanh số'] || 0,
     so_don_hang: soDH,
     muc_tieu_dh: targets['Số lượng đơn hàng'] || 0,
@@ -613,50 +669,82 @@ function getDSMofTDV(tdvName, tinhTP) {
   return null;
 }
 
-function normTDVName(bcbhName) {
-  if (!bcbhName) return bcbhName;
-  const n = bcbhName.trim();
-  return TMAP.tdv_name_to_chitieu[n] || n;
+// Chuyển tên TDV trong Sổ chi tiết bán hàng (BCBH) sang đúng tên trong bảng Mục Tiêu KPI (chi_tieu).
+// Một số file BCBH (VD: mẫu chuẩn mới) chỉ ghi tên ngắn không kèm địa bàn (VD "Trung Kiên"), trong khi
+// Mục Tiêu KPI lưu tên đầy đủ kèm địa bàn (VD "Trung Kiên - YB") — nếu không có trong bảng ánh xạ cố định
+// tdv_name_to_chitieu thì dò gần đúng theo danh sách tên thực tế đang có trong Mục Tiêu KPI của kỳ đó.
+function normNewline(s) {
+  if (!s) return s;
+  return String(s).replace(/\r\n/g, '\n');
 }
 
-app.get('/api/kpi-thuc-dat', async (req, res) => {
-  const db = await loadDB();
-  const { nam, thang } = req.query;
-  const namInt = parseInt(nam || 2026);
-  const thangInt = parseInt(thang || 4);
+function normTDVName(bcbhName, ctNames) {
+  if (!bcbhName) return bcbhName;
+  const n = bcbhName.trim();
+  if (TMAP.tdv_name_to_chitieu[n]) return TMAP.tdv_name_to_chitieu[n];
+  if (ctNames && ctNames.length) {
+    const nLower = n.toLowerCase();
+    const match = ctNames.find(c => {
+      const cLower = c.trim().toLowerCase();
+      return cLower === nLower || cLower.startsWith(nLower + ' ') || cLower.startsWith(nLower + '-');
+    });
+    if (match) return match;
+  }
+  return n;
+}
 
-  // Lọc giao dịch theo tháng
+// Tính bảng KPI Thực Đạt (Tổng Kênh → DSM → TDV) cho 1 kỳ — dùng chung cho endpoint JSON và endpoint xuất Excel.
+function computeKpiThucDat(db, namInt, thangInt) {
+  const newFormat = hasNewThuTienForPeriod(db, namInt, thangInt);
+
+  // Lọc giao dịch PHÁT SINH trong tháng (doanh số bán hàng)
   const rows = db.doanh_so.filter(r => r.nam === namInt && r.thang === thangInt);
 
-  // Build cấu trúc: dsmData[dsm][tdv] = { ds, dh, kh, sptt }
+  // Build cấu trúc: dsmData[dsm][tdv] = { ds, dh, kh, sptt, tien_ve }
   const dsmData = {};
+  function ensureTdv(dsm, tdv) {
+    if (!dsmData[dsm]) dsmData[dsm] = {};
+    if (!dsmData[dsm][tdv]) dsmData[dsm][tdv] = { ds: 0, dh: new Set(), kh: new Set(), sptt: 0, tien_ve: 0 };
+    return dsmData[dsm][tdv];
+  }
 
   for (const r of rows) {
     const dsm = getDSMofTDV(r.ten_nhan_vien, r.tinh_thanh_pho) || 'Khác';
     const tdvBCBH = r.ten_nhan_vien || 'Khác';
-
-    if (!dsmData[dsm]) dsmData[dsm] = {};
-    if (!dsmData[dsm][tdvBCBH]) dsmData[dsm][tdvBCBH] = { ds: 0, dh: new Set(), kh: new Set(), sptt: 0 };
-
-    const d = dsmData[dsm][tdvBCBH];
+    const d = ensureTdv(dsm, tdvBCBH);
     d.ds += r.doanh_so_thuc_dat || 0;
     if (r.so_chung_tu) d.dh.add(r.so_chung_tu);
     if (r.ten_khach_hang) d.kh.add(r.ten_khach_hang);
     if (isSptt(r.ten_hang)) d.sptt += (r.so_luong_ban || 0) + (r.sl_khuyen_mai || 0);
   }
 
-  // Lấy targets từ chi_tieu
+  // Bổ sung doanh số THU TIỀN trong tháng (chuẩn mới, cột "Tình trạng thu tiền") — có thể đến từ
+  // giao dịch phát sinh ở tháng khác (VD: bán T5, thu tiền T7 → tính vào KPI T7 của đúng TDV đó).
+  // Vì vậy phải quét TOÀN BỘ doanh_so chứ không chỉ giao dịch phát sinh trong tháng đang xem.
+  if (newFormat) {
+    for (const r of db.doanh_so) {
+      if (r.da_thu_tien === true && r.nam_thu_tien === namInt && r.thang_thu_tien === thangInt) {
+        const dsm = getDSMofTDV(r.ten_nhan_vien, r.tinh_thanh_pho) || 'Khác';
+        const tdvBCBH = r.ten_nhan_vien || 'Khác';
+        ensureTdv(dsm, tdvBCBH).tien_ve += r.doanh_so_thuc_dat || 0;
+      }
+    }
+  }
+
+  // Lấy targets từ chi_tieu — chuẩn hóa \r\n thành \n vì tên nhiều dòng (VD "CTV Hà Tĩnh\nCTV ...")
+  // có thể lưu khác xuống dòng giữa file Excel gốc và bảng ánh xạ territory_map.json
   const ctRows = db.chi_tieu.filter(r => r.nam === namInt && r.thang === thangInt);
   const ctMap = {};
   ctRows.forEach(r => {
-    const nv = r.nhan_vien;
+    const nv = normNewline(r.nhan_vien);
     if (!ctMap[nv]) ctMap[nv] = {};
     ctMap[nv][r.chi_so] = r.gia_tri;
   });
 
+  const ctNameList = Object.keys(ctMap);
   function getTarget(tdvBCBH) {
-    const ctName = normTDVName(tdvBCBH);
-    return ctMap[ctName] || ctMap[tdvBCBH] || {};
+    const ctName = normNewline(normTDVName(tdvBCBH, ctNameList));
+    return ctMap[ctName] || ctMap[normNewline(tdvBCBH)] || {};
   }
 
   function pct(actual, target) {
@@ -666,7 +754,7 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
 
   // Build kết quả theo thứ tự DSM
   const result = [];
-  let tongKenhDS = 0, tongKenhDH = new Set(), tongKenhKH = new Set(), tongKenhSPTT = 0;
+  let tongKenhDS = 0, tongKenhTienVe = 0, tongKenhDH = new Set(), tongKenhKH = new Set(), tongKenhSPTT = 0;
 
   for (const dsmKey of TMAP.dsm_order) {
     const dsmInfo = TMAP.dsm_groups[dsmKey];
@@ -684,27 +772,33 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
     const dsmTarget = ctMap[dsmCTKey] || {};
 
     // Tính tổng DSM từ các TDV
-    let dsmDS = 0, dsmDH = new Set(), dsmKH = new Set(), dsmSPTT = 0;
+    let dsmDS = 0, dsmTienVe = 0, dsmDH = new Set(), dsmKH = new Set(), dsmSPTT = 0;
     const tdvRows = [];
 
     for (const [tdvBCBH, d] of Object.entries(tdvMap)) {
       const t = getTarget(tdvBCBH);
-      const ds = d.ds, dh = d.dh.size, kh = d.kh.size, sptt = d.sptt;
-      const gttb = dh > 0 ? Math.round(ds / dh) : 0;
+      const dsBanHang = d.ds, dsTienVe = d.tien_ve, dh = d.dh.size, kh = d.kh.size, sptt = d.sptt;
+      // GTTB (giá trị TB/đơn) là chỉ số vận hành theo giao dịch phát sinh — luôn tính theo doanh số bán hàng
+      const gttb = dh > 0 ? Math.round(dsBanHang / dh) : 0;
+      // KPI Doanh số chính: dùng tiền về khi đã có dữ liệu chuẩn mới, nếu không thì dùng doanh số bán hàng như cũ
+      const dsKPI = newFormat ? dsTienVe : dsBanHang;
 
-      dsmDS += ds; d.dh.forEach(x => dsmDH.add(x)); d.kh.forEach(x => dsmKH.add(x)); dsmSPTT += sptt;
-      tongKenhDS += ds; d.dh.forEach(x => tongKenhDH.add(x)); d.kh.forEach(x => tongKenhKH.add(x)); tongKenhSPTT += sptt;
+      dsmDS += dsBanHang; dsmTienVe += dsTienVe;
+      d.dh.forEach(x => dsmDH.add(x)); d.kh.forEach(x => dsmKH.add(x)); dsmSPTT += sptt;
+      tongKenhDS += dsBanHang; tongKenhTienVe += dsTienVe;
+      d.dh.forEach(x => tongKenhDH.add(x)); d.kh.forEach(x => tongKenhKH.add(x)); tongKenhSPTT += sptt;
 
       tdvRows.push({
         level: 'tdv', dsm: dsmKey, dsm_label: dsmInfo.label,
-        name: tdvBCBH, name_chitieu: normTDVName(tdvBCBH),
-        ds, dh, kh, sptt, gttb,
+        name: tdvBCBH, name_chitieu: normTDVName(tdvBCBH, ctNameList),
+        ds: dsKPI, doanh_so_ban_hang: dsBanHang, doanh_so_tien_ve: newFormat ? dsTienVe : null,
+        dh, kh, sptt, gttb,
         mt_ds: t['Doanh số'] || 0,
         mt_dh: t['Số lượng đơn hàng'] || 0,
         mt_kh: t['Số lượng độ phủ TB/THÁNG'] || 0,
         mt_sptt: t['Sản phẩm trọng tâm'] || 0,
         mt_gttb: t['Giá trị trung bình đơn hàng'] || 0,
-        pct_ds: pct(ds, t['Doanh số']),
+        pct_ds: pct(dsKPI, t['Doanh số']),
         pct_dh: pct(dh, t['Số lượng đơn hàng']),
         pct_kh: pct(kh, t['Số lượng độ phủ TB/THÁNG']),
         pct_sptt: pct(sptt, t['Sản phẩm trọng tâm']),
@@ -716,16 +810,18 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
 
     const dsmDH_n = dsmDH.size, dsmKH_n = dsmKH.size;
     const dsmGTTB = dsmDH_n > 0 ? Math.round(dsmDS / dsmDH_n) : 0;
+    const dsmKPI = newFormat ? dsmTienVe : dsmDS;
 
     result.push({
       level: 'dsm', dsm: dsmKey, dsm_label: dsmInfo.label, name: dsmInfo.label,
-      ds: dsmDS, dh: dsmDH_n, kh: dsmKH_n, sptt: dsmSPTT, gttb: dsmGTTB,
+      ds: dsmKPI, doanh_so_ban_hang: dsmDS, doanh_so_tien_ve: newFormat ? dsmTienVe : null,
+      dh: dsmDH_n, kh: dsmKH_n, sptt: dsmSPTT, gttb: dsmGTTB,
       mt_ds: dsmTarget['Doanh số'] || 0,
       mt_dh: dsmTarget['Số lượng đơn hàng'] || 0,
       mt_kh: dsmTarget['Số lượng độ phủ TB/THÁNG'] || 0,
       mt_sptt: dsmTarget['Sản phẩm trọng tâm'] || 0,
       mt_gttb: dsmTarget['Giá trị trung bình đơn hàng'] || 0,
-      pct_ds: pct(dsmDS, dsmTarget['Doanh số']),
+      pct_ds: pct(dsmKPI, dsmTarget['Doanh số']),
       pct_dh: pct(dsmDH_n, dsmTarget['Số lượng đơn hàng']),
       pct_kh: pct(dsmKH_n, dsmTarget['Số lượng độ phủ TB/THÁNG']),
       pct_sptt: pct(dsmSPTT, dsmTarget['Sản phẩm trọng tâm']),
@@ -739,14 +835,20 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
   const tkGTTB = tkDH > 0 ? Math.round(tongKenhDS / tkDH) : 0;
   const tkTarget = ctMap['TỔNG KÊNH'] || {};
 
-  // Doanh số tiền về: chỉ có ở mức Tổng Kênh, dùng làm KPI Doanh số chính khi có dữ liệu
-  const tienVeRows = db.tien_ve.filter(r => r.nam === namInt && r.thang === thangInt);
-  const tongTienVe = tienVeRows.reduce((s, r) => s + (r.so_tien || 0), 0);
-  const dsKPI = tienVeRows.length ? tongTienVe : tongKenhDS;
+  // Doanh số tiền về Tổng Kênh: chuẩn mới = tổng tiền về đã tính theo từng TDV ở trên (chính xác hơn,
+  // vì gộp đúng công nợ tháng trước thu vào tháng này). Fallback bảng tien_ve cũ nếu chưa có dữ liệu chuẩn mới.
+  let tongTienVeFinal = tongKenhTienVe;
+  let coTienVe = newFormat;
+  if (!newFormat) {
+    const tienVeRowsLegacy = db.tien_ve.filter(r => r.nam === namInt && r.thang === thangInt);
+    tongTienVeFinal = tienVeRowsLegacy.reduce((s, r) => s + (r.so_tien || 0), 0);
+    coTienVe = tienVeRowsLegacy.length > 0;
+  }
+  const dsKPI = coTienVe ? tongTienVeFinal : tongKenhDS;
 
   result.unshift({
     level: 'total', name: 'TỔNG KÊNH OTC',
-    ds: dsKPI, doanh_so_ban_hang: tongKenhDS, doanh_so_tien_ve: tienVeRows.length ? tongTienVe : null,
+    ds: dsKPI, doanh_so_ban_hang: tongKenhDS, doanh_so_tien_ve: coTienVe ? tongTienVeFinal : null,
     dh: tkDH, kh: tkKH, sptt: tongKenhSPTT, gttb: tkGTTB,
     mt_ds: tkTarget['Doanh số'] || 0, mt_dh: tkTarget['Số lượng đơn hàng'] || 0,
     mt_kh: tkTarget['Số lượng độ phủ TB/THÁNG'] || 0,
@@ -759,7 +861,103 @@ app.get('/api/kpi-thuc-dat', async (req, res) => {
     pct_gttb: pct(tkGTTB, tkTarget['Giá trị trung bình đơn hàng']),
   });
 
-  res.json(result);
+  return result;
+}
+
+app.get('/api/kpi-thuc-dat', async (req, res) => {
+  const db = await loadDB();
+  const { nam, thang } = req.query;
+  const namInt = parseInt(nam || 2026);
+  const thangInt = parseInt(thang || 4);
+  res.json(computeKpiThucDat(db, namInt, thangInt));
+});
+
+// ─── XUẤT EXCEL KPI THỰC ĐẠT ──────────────────────────────────────────────
+const KPI_EXPORT_COLS = [
+  { key: 'ds', label: 'Doanh số' },
+  { key: 'dh', label: 'Đơn hàng' },
+  { key: 'kh', label: 'Độ phủ (KH)' },
+  { key: 'gttb', label: 'GT TB Đơn' },
+  { key: 'sptt', label: 'SPTT (hộp)' },
+];
+
+function safeSheetName(name) {
+  return String(name || '').replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || 'Sheet';
+}
+
+function removeDiacritics(str) {
+  return String(str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+
+// Bảng KPI (Tổng/DSM/TDV) → mảng 2 dòng header + dữ liệu, dùng chung cho sheet DSM và sheet Tóm tắt TDV
+function kpiRowsToSheet(rows, nameCol) {
+  const header1 = [...nameCol];
+  const header2 = nameCol.map(() => '');
+  KPI_EXPORT_COLS.forEach(c => { header1.push(c.label, '', ''); header2.push('Thực hiện', 'Mục tiêu', '% HT'); });
+  const data = [header1, header2];
+  rows.forEach(r => {
+    const row = nameCol.length > 1 ? [r.name, r.dsm_label || ''] : [r.level === 'tdv' ? '    ' + r.name : r.name];
+    KPI_EXPORT_COLS.forEach(c => {
+      const pct = r['pct_' + c.key];
+      row.push(r[c.key] ?? 0, r['mt_' + c.key] ?? 0, pct != null ? pct + '%' : '');
+    });
+    data.push(row);
+  });
+  return XLSX.utils.aoa_to_sheet(data);
+}
+
+app.get('/api/kpi-thuc-dat/export', async (req, res) => {
+  const db = await loadDB();
+  const { nam, thang, loai, pham_vi } = req.query;
+  const namInt = parseInt(nam || 2026);
+  const thangInt = parseInt(thang || 4);
+  const allRows = computeKpiThucDat(db, namInt, thangInt);
+  const wb = XLSX.utils.book_new();
+
+  if (loai === 'dsm') {
+    const dsmKeys = pham_vi && pham_vi !== 'all' ? [pham_vi] : TMAP.dsm_order;
+    dsmKeys.forEach(dsmKey => {
+      const dsmRow = allRows.find(r => r.level === 'dsm' && r.dsm === dsmKey);
+      if (!dsmRow) return;
+      const tdvRows = allRows.filter(r => r.level === 'tdv' && r.dsm === dsmKey);
+      const ws = kpiRowsToSheet([dsmRow, ...tdvRows], ['Tên / Địa bàn']);
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName(dsmRow.dsm_label || dsmKey));
+    });
+    if (wb.SheetNames.length === 0) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Không có dữ liệu cho kỳ/DSM đã chọn']]), 'Trống');
+    }
+  } else if (loai === 'tdv') {
+    let tdvRows = allRows.filter(r => r.level === 'tdv');
+    if (pham_vi && pham_vi !== 'all') tdvRows = tdvRows.filter(r => r.name === pham_vi);
+
+    const wsSummary = kpiRowsToSheet(tdvRows, ['TDV', 'DSM']);
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Tóm tắt KPI');
+
+    const tdvNameSet = new Set(tdvRows.map(r => r.name));
+    let dsRows = db.doanh_so.filter(r => r.nam === namInt && r.thang === thangInt);
+    dsRows = (pham_vi && pham_vi !== 'all')
+      ? dsRows.filter(r => r.ten_nhan_vien === pham_vi)
+      : dsRows.filter(r => tdvNameSet.has(r.ten_nhan_vien || 'Khác'));
+    dsRows = [...dsRows].sort((a, b) => (a.ngay_hach_toan || '').localeCompare(b.ngay_hach_toan || ''));
+
+    const detailData = [['Tên nhân viên', 'Ngày hạch toán', 'Số chứng từ', 'Mã khách hàng', 'Tên khách hàng', 'Tỉnh/Thành phố', 'Tên hàng', 'Số lượng bán', 'SL khuyến mại', 'Đơn giá', 'Doanh số bán', 'Doanh số thực đạt', 'Tình trạng thu tiền']];
+    dsRows.forEach(r => detailData.push([
+      r.ten_nhan_vien || '', r.ngay_hach_toan || '', r.so_chung_tu || '', r.ma_khach_hang || '',
+      r.ten_khach_hang || '', r.tinh_thanh_pho || '', r.ten_hang || '', r.so_luong_ban || 0,
+      r.sl_khuyen_mai || 0, r.don_gia || 0, r.doanh_so_ban || 0, r.doanh_so_thuc_dat || 0,
+      r.tinh_trang_thu_tien || ''
+    ]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(detailData), 'Chi tiết giao dịch');
+  } else {
+    return res.status(400).json({ error: 'Thiếu tham số loai (dsm|tdv)' });
+  }
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const phamViPart = (pham_vi && pham_vi !== 'all') ? `${removeDiacritics(pham_vi).replace(/\s+/g, '')}_` : '';
+  const fileName = `KPI_ThucDat_${loai === 'dsm' ? 'DSM' : 'TDV'}_${phamViPart}T${thangInt}-${namInt}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(buf);
 });
 
 // Mọi route không phải /api → trả về React app

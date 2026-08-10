@@ -91,6 +91,34 @@ function parseChiTieuFile(buffer, nam, thang, nguon) {
 const parseChiTieuSPTT = (buf, nam, thang) => parseChiTieuFile(buf, nam, thang, 'sptt');
 const parseChiTieuKeHoach = (buf, nam, thang) => parseChiTieuFile(buf, nam, thang, 'ke_hoach');
 
+// Parse cột "Tình trạng thu tiền" (VD: "Đã thu tiền T7", "Chưa thu tiền") thành trạng thái + kỳ thực thu.
+// saleNam/saleThang là kỳ phát sinh bán hàng của chính dòng đó — dùng để suy ra năm thực thu khi
+// file không ghi năm (VD: bán tháng 12/2026, "Đã thu tiền T1" → thực thu là T1/2027).
+function parseTinhTrangThuTien(raw, saleNam, saleThang) {
+  if (raw === undefined || raw === null) return { tinh_trang_thu_tien: null, da_thu_tien: null, nam_thu_tien: null, thang_thu_tien: null };
+  const s = String(raw).trim();
+  if (!s) return { tinh_trang_thu_tien: null, da_thu_tien: null, nam_thu_tien: null, thang_thu_tien: null };
+
+  const m = s.match(/^Đã thu tiền\s*T\s*(\d{1,2})(?:[.\/](\d{2,4}))?/i);
+  if (m) {
+    const thangThu = parseInt(m[1]);
+    let namThu;
+    if (m[2]) {
+      namThu = m[2].length === 2 ? 2000 + parseInt(m[2]) : parseInt(m[2]);
+    } else {
+      namThu = thangThu < saleThang ? saleNam + 1 : saleNam;
+    }
+    return { tinh_trang_thu_tien: s, da_thu_tien: true, nam_thu_tien: namThu, thang_thu_tien: thangThu };
+  }
+
+  if (/^Chưa thu tiền/i.test(s)) {
+    return { tinh_trang_thu_tien: s, da_thu_tien: false, nam_thu_tien: null, thang_thu_tien: null };
+  }
+
+  // Giá trị lạ (không đúng 2 mẫu trên) — giữ lại text gốc nhưng không suy luận được trạng thái
+  return { tinh_trang_thu_tien: s, da_thu_tien: null, nam_thu_tien: null, thang_thu_tien: null };
+}
+
 // Parse file doanh số thực hiện (Sổ chi tiết bán hàng hoặc sheet Dữ liệu)
 function parseDuLieu(buffer, nam, thang) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true });
@@ -123,6 +151,13 @@ function parseDuLieu(buffer, nam, thang) {
     : col['Tổng thanh toán'] !== undefined ? 'Tổng thanh toán'
     : 'Doanh số bán';
 
+  // Cột "Tình trạng thu tiền" đôi khi nằm ở dòng header phụ ngay dưới header chính (header 2 tầng)
+  let ttColIdx = col['Tình trạng thu tiền'];
+  if (ttColIdx === undefined && rows[headerRow + 1]) {
+    const idx2 = rows[headerRow + 1].findIndex(h => h && String(h).trim() === 'Tình trạng thu tiền');
+    if (idx2 !== -1) ttColIdx = idx2;
+  }
+
   const results = [];
   let namVal = nam, thangVal = thang;
 
@@ -137,6 +172,10 @@ function parseDuLieu(buffer, nam, thang) {
     // Loại trừ "Kênh Ủy Thác" khỏi dữ liệu KPI
     if (String(tenNV).toLowerCase().includes('ủy thác') || String(tenNV).toLowerCase().includes('uy thac')) continue;
 
+    // Loại trừ giao dịch nội bộ (nhóm "BOD") — không phải doanh số bán hàng thực tế cho khách hàng
+    const nhomKHRaw = String(row[col['Tên nhóm khách hàng']] || row[col['Nhóm quản lý vùng']] || '').trim();
+    if (nhomKHRaw.toUpperCase() === 'BOD') continue;
+
     let ngayStr = '';
     if (ngay instanceof Date) ngayStr = ngay.toISOString().split('T')[0];
     else ngayStr = String(ngay).substring(0, 10);
@@ -145,11 +184,14 @@ function parseDuLieu(buffer, nam, thang) {
     const d = new Date(ngayStr);
     if (!isNaN(d)) { namVal = d.getFullYear(); thangVal = d.getMonth() + 1; }
 
+    const ttInfo = parseTinhTrangThuTien(ttColIdx !== undefined ? row[ttColIdx] : null, namVal, thangVal);
+
     results.push({
       nam: namVal,
       thang: thangVal,
       ngay_hach_toan: ngayStr,
       so_chung_tu: String(row[col['Số chứng từ']] || ''),
+      ma_khach_hang: String(row[col['Mã khách hàng']] || ''),
       ten_khach_hang: String(row[col['Tên khách hàng']] || ''),
       ten_hang: String(row[col['Tên hàng']] || ''),
       so_luong_ban: parseFloat(row[col['Số lượng bán']]) || 0,
@@ -160,7 +202,11 @@ function parseDuLieu(buffer, nam, thang) {
       ten_nhan_vien: String(tenNV).trim(),
       ten_don_vi: String(row[col['Tên đơn vị kinh doanh']] || ''),
       tinh_thanh_pho: String(row[col['Tỉnh/Thành phố']] || ''),
-      ten_nhom_kh: String(row[col['Tên nhóm khách hàng']] || row[col['Nhóm quản lý vùng']] || '')
+      ten_nhom_kh: String(row[col['Tên nhóm khách hàng']] || row[col['Nhóm quản lý vùng']] || ''),
+      tinh_trang_thu_tien: ttInfo.tinh_trang_thu_tien,
+      da_thu_tien: ttInfo.da_thu_tien,
+      nam_thu_tien: ttInfo.nam_thu_tien,
+      thang_thu_tien: ttInfo.thang_thu_tien
     });
   }
 

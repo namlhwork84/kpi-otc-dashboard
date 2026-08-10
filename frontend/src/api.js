@@ -38,6 +38,7 @@ export const uploadChiTieu = (file, nam, thang, nguon = 'sptt') => {
 
 export const getMucTieu = (params) => api.get('/muc-tieu', { params });
 export const getKpiThucDat = (params) => api.get('/kpi-thuc-dat', { params });
+export const exportKpiThucDat = (params) => api.get('/kpi-thuc-dat/export', { params, responseType: 'blob' });
 
 export const uploadDoanhSo = (file, nam, thang) => {
   const fd = new FormData();

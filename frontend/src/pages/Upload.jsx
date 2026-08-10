@@ -147,14 +147,14 @@ export default function Upload() {
       <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginBottom: 28 }}>
         <UploadBox
           title="Sổ Chi Tiết Bán Hàng"
-          desc="Upload file xuất từ phần mềm kế toán — hệ thống tự tính Đơn hàng, Độ phủ, GTTB đơn, SPTT (tính cả hàng tặng) và so sánh với Mục tiêu KPI"
+          desc="Upload file xuất từ phần mềm kế toán — hệ thống tự tính Đơn hàng, Độ phủ, GTTB đơn, SPTT (tính cả hàng tặng) và so sánh với Mục tiêu KPI. Nếu file có cột 'Tình trạng thu tiền', hệ thống tự tính Doanh số tiền về theo từng TDV — công nợ phát sinh tháng trước, thu tiền tháng nào sẽ tự gộp vào KPI tháng đó của đúng TDV."
           onUpload={(f, n, t) => handleUpload(uploadDoanhSo, f, n, t)}
           loading={loading}
           color="#2e7d32"
         />
         <UploadBox
-          title="Nhật Ký Chung / Công Nợ"
-          desc="Upload file Nhật ký chung — hệ thống lọc bút toán thu tiền khách hàng để tính KPI Doanh số theo tiền về thực tế trong tháng (chỉ áp dụng ở mức Tổng Kênh)"
+          title="Nhật Ký Chung / Công Nợ (không bắt buộc)"
+          desc="Chỉ cần dùng cho các kỳ CŨ mà file Sổ Chi Tiết Bán Hàng chưa có cột 'Tình trạng thu tiền'. Từ khi file Sổ Chi Tiết Bán Hàng có cột này, hệ thống tự tính tiền về theo từng TDV — không cần upload file này nữa."
           onUpload={(f, n, t) => handleUpload(uploadTienVe, f, n, t)}
           loading={loading}
           color="#01377d"
@@ -197,7 +197,7 @@ export default function Upload() {
                     >
                       {deleting === `${d.nam}-${d.thang}` ? 'Đang xóa...' : '🗑 Xóa bán hàng'}
                     </button>
-                    {d.tien_ve != null && (
+                    {d.tien_ve_legacy && (
                       <button
                         onClick={() => handleDeleteTienVe(d.nam, d.thang)}
                         disabled={deletingTV === `${d.nam}-${d.thang}`}
